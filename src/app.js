@@ -18,8 +18,7 @@ const loggerMiddleware = require('./middleware/logger');
 const app = express();
 
 // Trust proxy - MUST be before rate limiter
-// Use number instead of boolean for Render's load balancer
-app.set('trust proxy', 1);
+app.set('trust proxy', 1); // Trust first proxy (Render's proxy)
 
 // Security middleware
 app.use(helmet());
@@ -27,34 +26,22 @@ app.use(compression());
 
 // CORS configuration
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || true,
+  origin: true, // Allow all origins (dynamically reflects request origin)
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept']
 }));
 
-// Rate limiting - FIXED for Render with proper trust proxy handling
+// Rate limiting - FIXED for Render
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // 100 requests per window
   standardHeaders: true,
   legacyHeaders: false,
-  // Use a custom key generator that handles proxy correctly
-  keyGenerator: (req) => {
-    // Get the real IP from X-Forwarded-For header (Render's proxy)
-    const forwarded = req.headers['x-forwarded-for'];
-    const ip = forwarded ? forwarded.split(',')[0].trim() : req.ip;
-    return ip || 'unknown';
-  },
+  // This is the fix for the trust proxy error
   skip: (req) => {
     // Skip rate limiting for health checks
     return req.path === '/api/health';
-  },
-  handler: (req, res) => {
-    res.status(429).json({
-      success: false,
-      message: 'Too many requests, please try again later.'
-    });
   }
 });
 
@@ -81,7 +68,7 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Health check endpoint - Should respond quickly
+// Health check endpoint
 app.get('/api/health', async (req, res) => {
   const dbConnections = require('./config/db-connections');
 
@@ -91,7 +78,7 @@ app.get('/api/health', async (req, res) => {
     res.status(200).json({
       status: 'ok',
       timestamp: new Date().toISOString(),
-      service: 'Hotel Reservation API',
+      service: 'Hotel Reservation API - Unstop Assessment',
       version: '1.0.0',
       environment: process.env.NODE_ENV || 'development',
       databases: {
