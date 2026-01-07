@@ -18,6 +18,7 @@ const loggerMiddleware = require('./middleware/logger');
 const app = express();
 
 // Security middleware
+app.enable('trust proxy'); // Required for Render/Heroku proxies
 app.use(helmet());
 app.use(compression());
 
@@ -43,8 +44,15 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('combined'));
 }
 
-// Custom logger middleware
-app.use(loggerMiddleware);
+// Custom logger middleware (Only if MongoDB is connected)
+const mongoose = require('mongoose');
+app.use((req, res, next) => {
+  if (mongoose.connection.readyState === 1) {
+    loggerMiddleware(req, res, next);
+  } else {
+    next();
+  }
+});
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
