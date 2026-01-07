@@ -17,8 +17,10 @@ const loggerMiddleware = require('./middleware/logger');
 
 const app = express();
 
+// Trust proxy - MUST be before rate limiter
+app.set('trust proxy', 1); // Trust first proxy (Render's proxy)
+
 // Security middleware
-app.enable('trust proxy'); // Required for Render/Heroku proxies
 app.use(helmet());
 app.use(compression());
 
@@ -30,11 +32,19 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept']
 }));
 
-// Rate limiting
+// Rate limiting - FIXED for Render
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // 100 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  // This is the fix for the trust proxy error
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    return req.path === '/api/health';
+  }
 });
+
 app.use('/api/', limiter);
 
 // Request logging
