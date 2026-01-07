@@ -79,20 +79,6 @@ const sequelizePostgres = process.env.DATABASE_URL
     }
   );
 
-// Add connection event listeners
-sequelizePostgres.connectionManager.pool.on('acquire', (connection) => {
-  console.log('🔌 PostgreSQL connection acquired');
-});
-
-sequelizePostgres.connectionManager.pool.on('release', (connection) => {
-  console.log('🔓 PostgreSQL connection released');
-});
-
-// Handle connection errors gracefully
-sequelizePostgres.connectionManager.pool.on('error', (error) => {
-  console.error('❌ PostgreSQL pool error:', error.message);
-});
-
 // Test connection with retry logic
 const testConnection = async (retries = 3, delay = 5000) => {
   for (let i = 0; i < retries; i++) {
