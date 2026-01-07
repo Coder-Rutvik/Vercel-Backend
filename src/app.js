@@ -90,7 +90,8 @@ app.get('/api/health', async (req, res) => {
         auth: '/api/auth',
         bookings: '/api/bookings',
         rooms: '/api/rooms',
-        admin: '/api/admin'
+        admin: '/api/admin',
+        dbTest: '/api/db-test'
       }
     });
   } catch (error) {
@@ -99,6 +100,18 @@ app.get('/api/health', async (req, res) => {
       message: 'Health check failed',
       error: error.message
     });
+  }
+});
+
+// DB diagnostic endpoint - runs a simple SQL query against PostgreSQL
+app.get('/api/db-test', async (req, res) => {
+  const { sequelizePostgres } = require('./config/postgresql');
+  try {
+    const [result] = await sequelizePostgres.query('SELECT 1+1 AS result');
+    res.status(200).json({ success: true, result });
+  } catch (err) {
+    console.error('DB test failed:', err && err.message);
+    res.status(500).json({ success: false, error: err.message, code: err.code });
   }
 });
 
