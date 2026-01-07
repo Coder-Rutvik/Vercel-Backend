@@ -4,9 +4,25 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 
 // Determine Primary User Model based on Environment
-// If we have a DATABASE_URL (Render), use Postgres as Primary
 const isPostgresPrimary = !!process.env.DATABASE_URL;
 const User = isPostgresPrimary ? UserPostgres : UserMySQL;
+
+// Helper function to retry database operations
+const retryOperation = async (operation, maxRetries = 3) => {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await operation();
+    } catch (error) {
+      console.error(`Attempt ${i + 1} failed:`, error.message);
+      
+      // If it's the last retry, throw the error
+      if (i === maxRetries - 1) throw error;
+      
+      // Wait before retrying (exponential backoff)
+      await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, i)));
+    }
+  }
+};
 
 // @desc    Register user
 // @route   POST /api/auth/register
@@ -32,8 +48,11 @@ const register = async (req, res) => {
       });
     }
 
-    // Check if user exists
-    const existingUser = await User.findOne({ where: { email } });
+    // Check if user exists (with retry)
+    const existingUser = await retryOperation(async () => {
+      return await User.findOne({ where: { email } });
+    });
+
     if (existingUser) {
       return res.status(400).json({
         success: false,
@@ -41,29 +60,34 @@ const register = async (req, res) => {
       });
     }
 
-    // Create user
-    const user = await User.create({
-      name,
-      email,
-      password,
-      phone,
-      role: 'user'
+    // Create user (with retry)
+    const user = await retryOperation(async () => {
+      return await User.create({
+        name,
+        email,
+        password,
+        phone,
+        role: 'user'
+      });
     });
 
     // Dual Write: Only sync to Postgres if we are NOT already using it as primary
     if (!isPostgresPrimary) {
       try {
-        await UserPostgres.create({
-          userId: user.userId,
-          name: user.name,
-          email: user.email,
-          password: user.password,
-          phone: user.phone,
-          role: user.role
+        await retryOperation(async () => {
+          await UserPostgres.create({
+            userId: user.userId,
+            name: user.name,
+            email: user.email,
+            password: user.password,
+            phone: user.phone,
+            role: user.role
+          });
         });
         console.log('✅ User synced to PostgreSQL');
       } catch (postgresError) {
         console.error('⚠️ PostgreSQL sync failed (User create):', postgresError.message);
+        // Continue even if sync fails
       }
     }
 
@@ -86,9 +110,21 @@ const register = async (req, res) => {
     });
   } catch (error) {
     console.error('Register error:', error);
+    
+    // Send more specific error message
+    let errorMessage = 'Server error';
+    if (error.message.includes('Connection terminated')) {
+      errorMessage = 'Database connection issue. Please try again in a moment.';
+    } else if (error.name === 'SequelizeConnectionError') {
+      errorMessage = 'Unable to connect to database. Please try again.';
+    } else if (error.name === 'SequelizeValidationError') {
+      errorMessage = error.errors.map(e => e.message).join(', ');
+    }
+    
     res.status(500).json({
       success: false,
-      message: error.message || 'Server error',
+      message: errorMessage,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
       stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
@@ -109,8 +145,11 @@ const login = async (req, res) => {
       });
     }
 
-    // Check if user exists
-    const user = await User.findOne({ where: { email } });
+    // Check if user exists (with retry)
+    const user = await retryOperation(async () => {
+      return await User.findOne({ where: { email } });
+    });
+
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -154,9 +193,16 @@ const login = async (req, res) => {
     });
   } catch (error) {
     console.error('Login error:', error);
+    
+    let errorMessage = 'Server error';
+    if (error.message.includes('Connection terminated')) {
+      errorMessage = 'Database connection issue. Please try again in a moment.';
+    }
+    
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: errorMessage,
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -166,8 +212,10 @@ const login = async (req, res) => {
 // @access  Private
 const getMe = async (req, res) => {
   try {
-    const user = await User.findByPk(req.user.userId, {
-      attributes: { exclude: ['password'] }
+    const user = await retryOperation(async () => {
+      return await User.findByPk(req.user.userId, {
+        attributes: { exclude: ['password'] }
+      });
     });
 
     if (!user) {
@@ -198,7 +246,10 @@ const updateProfile = async (req, res) => {
     const { name, phone } = req.body;
     const userId = req.user.userId;
 
-    const user = await User.findByPk(userId);
+    const user = await retryOperation(async () => {
+      return await User.findByPk(userId);
+    });
+
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -209,7 +260,9 @@ const updateProfile = async (req, res) => {
     if (name) user.name = name;
     if (phone) user.phone = phone;
 
-    await user.save();
+    await retryOperation(async () => {
+      await user.save();
+    });
 
     // Dual Write: Update user in PostgreSQL (Only if not primary)
     if (!isPostgresPrimary) {
@@ -266,7 +319,10 @@ const changePassword = async (req, res) => {
       });
     }
 
-    const user = await User.findByPk(userId);
+    const user = await retryOperation(async () => {
+      return await User.findByPk(userId);
+    });
+
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -285,7 +341,9 @@ const changePassword = async (req, res) => {
 
     // Update password
     user.password = newPassword;
-    await user.save();
+    await retryOperation(async () => {
+      await user.save();
+    });
 
     // Dual Write: Update password in PostgreSQL (Only if not primary)
     if (!isPostgresPrimary) {

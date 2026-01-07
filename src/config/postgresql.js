@@ -10,29 +10,49 @@ const sequelizePostgres = process.env.DATABASE_URL
         require: true,
         rejectUnauthorized: false
       },
-      keepAlive: true
+      keepAlive: true,
+      // Add connection timeout
+      connectTimeout: 60000,
+      // Statement timeout (30 seconds)
+      statement_timeout: 30000,
+      // Query timeout
+      query_timeout: 30000
     },
     pool: {
-      max: 4, // Allow slight concurrency
+      max: 3, // Reduced for free tier
       min: 0,
-      acquire: 30000,
-      idle: 0, // Disconnect immediately after use ("Fresh Connection" strategy)
-      evict: 10000,
-      // Verify connection before using it
-      validate: (obj) => {
-        // If the connection is not valid, looking at 'SELECT 1' usually works
-        if (!obj || !obj.query) return false;
-        return obj.query('SELECT 1').then(() => true).catch(() => false);
-      }
+      acquire: 60000, // Increased to 60 seconds
+      idle: 30000, // Keep connection alive for 30 seconds
+      evict: 5000,
+      // Handle connection errors gracefully
+      handleDisconnects: true
     },
     retry: {
       match: [
         /ConnectionError/,
         /SequelizeConnectionError/,
+        /SequelizeConnectionRefusedError/,
+        /SequelizeHostNotFoundError/,
+        /SequelizeHostNotReachableError/,
+        /SequelizeInvalidConnectionError/,
+        /SequelizeConnectionTimedOutError/,
         /SequelizeConnectionTerminatedError/,
-        /Connection terminated unexpectedly/
+        /Connection terminated unexpectedly/,
+        /Connection terminated/,
+        /ETIMEDOUT/,
+        /ECONNRESET/,
+        /ENOTFOUND/,
+        /ENETUNREACH/,
+        /ECONNREFUSED/
       ],
-      max: 3
+      max: 5, // Retry 5 times
+      backoffBase: 1000, // Start with 1 second
+      backoffExponent: 1.5 // Exponential backoff
+    },
+    // Add query timeout
+    define: {
+      charset: 'utf8',
+      collate: 'utf8_general_ci'
     }
   })
   : new Sequelize(
@@ -53,5 +73,15 @@ const sequelizePostgres = process.env.DATABASE_URL
     }
   );
 
-module.exports = sequelizePostgres;
+// Test connection on startup
+if (process.env.DATABASE_URL) {
+  sequelizePostgres.authenticate()
+    .then(() => {
+      console.log('✅ PostgreSQL initial connection successful');
+    })
+    .catch(err => {
+      console.error('❌ PostgreSQL initial connection failed:', err.message);
+    });
+}
 
+module.exports = sequelizePostgres;
