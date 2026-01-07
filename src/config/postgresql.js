@@ -30,19 +30,30 @@ const getPostgresConnection = () => {
     );
   }
 
-  // Parse the DATABASE_URL for logging (masked)
-  const urlObj = new URL(process.env.DATABASE_URL);
-  const maskedUrl = `postgresql://${urlObj.username}:****@${urlObj.hostname}:${urlObj.port}${urlObj.pathname}`;
+  // Parse the DATABASE_URL for logging (masked) and decide SSL usage
+  let maskedUrl = process.env.DATABASE_URL;
+  // Allow explicit override via PG_SSL (set to 'true') or enable in production
+  let shouldUseSsl = process.env.NODE_ENV === 'production' || process.env.PG_SSL === 'true';
+
+  try {
+    const urlObj = new URL(process.env.DATABASE_URL);
+    maskedUrl = `postgresql://${urlObj.username || 'user'}:****@${urlObj.hostname || 'host'}:${urlObj.port || '5432'}${urlObj.pathname || ''}`;
+
+    // Avoid forcing SSL for localhost unless explicitly requested
+    if (!process.env.PG_SSL && (urlObj.hostname === 'localhost' || urlObj.hostname === '127.0.0.1')) {
+      shouldUseSsl = false;
+    }
+  } catch (e) {
+    console.warn('⚠️ Could not parse DATABASE_URL for diagnostics:', e.message);
+  }
+
   console.log(`🔗 Connecting to PostgreSQL: ${maskedUrl}`);
 
   return new Sequelize(process.env.DATABASE_URL, {
     dialect: 'postgres',
     logging: process.env.NODE_ENV === 'development' ? console.log : false,
     dialectOptions: {
-      ssl: {
-        require: true,
-        rejectUnauthorized: false
-      },
+      ssl: shouldUseSsl ? { require: true, rejectUnauthorized: false } : false,
       keepAlive: true,
       connectTimeout: 30000, // 30 seconds
       statement_timeout: 30000,
