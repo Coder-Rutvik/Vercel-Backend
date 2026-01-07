@@ -9,14 +9,14 @@ const sequelizePostgres = process.env.DATABASE_URL
       ssl: {
         require: true,
         rejectUnauthorized: false
-      },
-      keepAlive: true // Keep connections alive
+      }
     },
     pool: {
-      max: 2, // Reduced for free tier (Render/Neon usually limit to 3-5)
+      max: 1, // Strict single connection
       min: 0,
-      acquire: 60000, // Increased timeout to 60s
-      idle: 10000
+      acquire: 60000,
+      idle: 1000, // Close quickly if unused to avoid server-side timeouts
+      evict: 500
     },
     retry: {
       match: [
