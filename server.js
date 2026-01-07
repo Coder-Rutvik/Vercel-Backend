@@ -4,7 +4,7 @@ require('dotenv').config();
 if (process.env.NODE_ENV === 'production') {
   const requiredVars = ['JWT_SECRET', 'DATABASE_URL'];
   const missingVars = requiredVars.filter(varName => !process.env[varName]);
-  
+
   if (missingVars.length > 0) {
     console.error('❌ ERROR: Missing required environment variables:', missingVars);
     process.exit(1);
@@ -22,23 +22,22 @@ const startServer = async () => {
   try {
     console.log('🚀 Starting Hotel Reservation System Backend on Render...');
     console.log('===========================================');
-    
+
     // Connect to PostgreSQL (Primary for Render)
     try {
       await sequelizePostgres.authenticate();
       console.log('✅ PostgreSQL connected successfully');
-      
-      // Optional: Sync in development only
-      if (process.env.NODE_ENV === 'development') {
-        const { sequelizePostgres: seqPg } = require('./src/models/postgresql');
-        await seqPg.sync({ alter: true });
-        console.log('✅ PostgreSQL database synced');
-      }
+
+      // Sync tables (Ensure they exist)
+      const { sequelizePostgres: seqPg } = require('./src/models/postgresql');
+      // Using alter: true to update schema without dropping data
+      await seqPg.sync({ alter: true });
+      console.log('✅ PostgreSQL database synced');
     } catch (postgresError) {
       console.error('❌ PostgreSQL connection failed:', postgresError.message);
       console.log('⚠️  Continuing without PostgreSQL...');
     }
-    
+
     // Connect to MongoDB (Optional)
     try {
       await connectMongoDB();
@@ -46,7 +45,7 @@ const startServer = async () => {
     } catch (mongoError) {
       console.warn('⚠️  MongoDB connection failed (continuing without):', mongoError.message);
     }
-    
+
     app.listen(PORT, () => {
       console.log(`✅ Server running on port ${PORT}`);
       console.log(`📁 Environment: ${process.env.NODE_ENV || 'development'}`);
@@ -55,7 +54,7 @@ const startServer = async () => {
       console.log('===========================================');
       console.log('🎉 Backend ready on Render!');
     });
-    
+
   } catch (error) {
     console.error('❌ Failed to start server:', error);
     process.exit(1);

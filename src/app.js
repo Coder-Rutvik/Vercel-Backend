@@ -64,9 +64,9 @@ app.get('/api/health', async (req, res) => {
       version: '1.0.0',
       environment: process.env.NODE_ENV || 'development',
       databases: {
-        mysql: dbStatus.mysql ? 'connected' : 'disconnected',
-        postgresql: dbStatus.postgresql ? 'connected' : 'disconnected',
-        mongodb: dbStatus.mongodb ? 'connected' : 'disconnected'
+        mysql: dbStatus.mysql.connected ? 'connected' : `disconnected (${dbStatus.mysql.error})`,
+        postgresql: dbStatus.postgresql.connected ? 'connected' : `disconnected (${dbStatus.postgresql.error})`,
+        mongodb: dbStatus.mongodb.connected ? 'connected' : `disconnected (${dbStatus.mongodb.error})`
       },
       endpoints: {
         auth: '/api/auth',

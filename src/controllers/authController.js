@@ -88,7 +88,8 @@ const register = async (req, res) => {
     console.error('Register error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: error.message || 'Server error',
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };
