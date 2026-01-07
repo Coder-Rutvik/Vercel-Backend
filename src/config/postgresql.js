@@ -13,9 +13,9 @@ const sequelizePostgres = process.env.DATABASE_URL
       keepAlive: true // Keep connections alive
     },
     pool: {
-      max: 10,
+      max: 2, // Reduced for free tier (Render/Neon usually limit to 3-5)
       min: 0,
-      acquire: 30000,
+      acquire: 60000, // Increased timeout to 60s
       idle: 10000
     },
     retry: {
