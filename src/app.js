@@ -23,10 +23,10 @@ app.use(compression());
 
 // CORS configuration
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:5000'],
+  origin: true, // Allow all origins (dynamically reflects request origin)
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept']
 }));
 
 // Rate limiting
@@ -53,10 +53,10 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Health check endpoint
 app.get('/api/health', async (req, res) => {
   const dbConnections = require('./config/db-connections');
-  
+
   try {
     const dbStatus = await dbConnections.checkAllConnections();
-    
+
     res.status(200).json({
       status: 'ok',
       timestamp: new Date().toISOString(),
