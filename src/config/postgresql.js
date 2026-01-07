@@ -9,13 +9,23 @@ const sequelizePostgres = process.env.DATABASE_URL
       ssl: {
         require: true,
         rejectUnauthorized: false
-      }
+      },
+      keepAlive: true // Keep connections alive
     },
     pool: {
       max: 10,
       min: 0,
       acquire: 30000,
       idle: 10000
+    },
+    retry: {
+      match: [
+        /ConnectionError/,
+        /SequelizeConnectionError/,
+        /SequelizeConnectionTerminatedError/,
+        /Connection terminated unexpectedly/
+      ],
+      max: 3
     }
   })
   : new Sequelize(
