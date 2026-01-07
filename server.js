@@ -29,10 +29,10 @@ const startServer = async () => {
       console.log('✅ PostgreSQL connected successfully');
 
       // Sync tables (Ensure they exist)
-      const { sequelizePostgres: seqPg } = require('./src/models/postgresql');
+      // const { sequelizePostgres: seqPg } = require('./src/models/postgresql');
       // Using alter: true to update schema without dropping data
-      await seqPg.sync({ alter: true });
-      console.log('✅ PostgreSQL database synced');
+      // await seqPg.sync({ alter: true });
+      console.log('✅ PostgreSQL connection verified (Sync skipped for stability)');
     } catch (postgresError) {
       console.error('❌ PostgreSQL connection failed:', postgresError.message);
       console.log('⚠️  Continuing without PostgreSQL...');

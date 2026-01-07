@@ -9,14 +9,14 @@ const sequelizePostgres = process.env.DATABASE_URL
       ssl: {
         require: true,
         rejectUnauthorized: false
-      }
+      },
+      keepAlive: true
     },
     pool: {
-      max: 1, // Strict single connection
+      max: 2,
       min: 0,
-      acquire: 60000,
-      idle: 1000, // Close quickly if unused to avoid server-side timeouts
-      evict: 500
+      acquire: 30000,
+      idle: 10000
     },
     retry: {
       match: [
