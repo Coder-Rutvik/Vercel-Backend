@@ -1,5 +1,7 @@
+// src/models/User.js - Line 2 चा path बदला
+const { sequelizePostgres } = require('../config/database');  // ✅ CHANGE THIS
+// पासून: const { sequelizePostgres } = require('../../config/database');
 const { DataTypes } = require('sequelize');
-const { sequelizePostgres } = require('../../config/database');
 const bcrypt = require('bcryptjs');
 
 const UserPostgres = sequelizePostgres.define('User', {
@@ -73,4 +75,3 @@ UserPostgres.prototype.comparePassword = async function (candidatePassword) {
 };
 
 module.exports = UserPostgres;
-

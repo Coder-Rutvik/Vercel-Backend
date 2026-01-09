@@ -1,5 +1,12 @@
+// src/controllers/adminController.js - UPDATED
 const { Sequelize, Op } = require('sequelize');
-const { UserPostgres, BookingPostgres, RoomPostgres } = require('../models');
+const { sequelize } = require('../config/database'); // ✅ ADD THIS
+
+// ✅ CORRECT: Import from models/index.js
+const db = require('../models');
+const UserPostgres = db.UserPostgres || db.User;
+const BookingPostgres = db.BookingPostgres || db.Booking;
+const RoomPostgres = db.RoomPostgres || db.Room;
 
 const User = UserPostgres;
 const Booking = BookingPostgres;
@@ -10,6 +17,10 @@ const Room = RoomPostgres;
 // @access  Private/Admin
 const getAllUsers = async (req, res) => {
   try {
+    // ✅ FIRST: Ensure users table exists
+    const { ensureUsersTable } = require('./authController');
+    await ensureUsersTable();
+    
     const users = await User.findAll({
       attributes: { exclude: ['password'] }
     });
@@ -21,9 +32,20 @@ const getAllUsers = async (req, res) => {
     });
   } catch (error) {
     console.error('Get users error:', error);
+    
+    // If users table doesn't exist
+    if (error.message.includes('relation "users" does not exist') || error.code === '42P01') {
+      return res.status(500).json({
+        success: false,
+        message: 'Users table not initialized. Please register a user first.',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+    
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -53,12 +75,11 @@ const getAllBookings = async (req, res) => {
     console.error('Get bookings error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
-
-
 
 // @desc    Update room
 // @route   PUT /api/admin/rooms/:id
@@ -119,7 +140,8 @@ const updateRoom = async (req, res) => {
     console.error('Update room error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -131,7 +153,8 @@ const getDashboardStats = async (req, res) => {
   try {
     // Check database connections
     const dbConnections = require('../config/database');
-    const dbStatus = await dbConnections.checkAllConnections();
+    const dbStatus = await dbConnections.checkConnection();
+    
     // Get total rooms
     const totalRooms = await Room.count();
     const availableRooms = await Room.count({ where: { isAvailable: true } });
@@ -158,7 +181,7 @@ const getDashboardStats = async (req, res) => {
     const todaysBookings = await Booking.count({
       where: {
         createdAt: {
-          [Sequelize.Op.gte]: today
+          [Op.gte]: today
         }
       }
     });
@@ -170,7 +193,7 @@ const getDashboardStats = async (req, res) => {
           total: totalRooms,
           available: availableRooms,
           occupied: totalRooms - availableRooms,
-          occupancyRate: ((totalRooms - availableRooms) / totalRooms * 100).toFixed(2)
+          occupancyRate: totalRooms > 0 ? ((totalRooms - availableRooms) / totalRooms * 100).toFixed(2) : "0.00"
         },
         bookings: {
           total: totalBookings,
@@ -188,15 +211,32 @@ const getDashboardStats = async (req, res) => {
           formatted: `₹${parseFloat(totalRevenue).toLocaleString('en-IN')}`
         },
         databases: {
-          postgresql: dbStatus.postgresql.connected ? 'connected' : `disconnected (${dbStatus.postgresql.error})`
+          postgresql: dbStatus.connected ? 'connected' : `disconnected (${dbStatus.error})`
         }
       }
     });
   } catch (error) {
     console.error('Get stats error:', error);
+    
+    // If tables don't exist
+    if (error.message.includes('does not exist') || error.code === '42P01') {
+      return res.json({
+        success: true,
+        data: {
+          rooms: { total: 0, available: 0, occupied: 0, occupancyRate: "0.00" },
+          bookings: { total: 0, confirmed: 0, cancelled: 0, today: 0 },
+          users: { total: 0, admins: 0, regular: 0 },
+          revenue: { total: 0, formatted: '₹0' },
+          databases: { postgresql: 'tables not initialized' }
+        },
+        message: 'Database tables not initialized yet'
+      });
+    }
+    
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
