@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "build": "npm run build",
     "dev": "nodemon server.js",
     "seed": "node src/scripts/seedDatabase.js",
     "sync:postgres": "node src/scripts/syncPostgresql.js",
