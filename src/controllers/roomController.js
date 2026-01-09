@@ -1,5 +1,4 @@
-const { RoomPostgres } = require('../models');
-const Room = RoomPostgres;
+const { Room, Booking } = require('../models');
 const { Sequelize, Op } = require('sequelize');
 
 // @desc    Get all rooms
@@ -186,26 +185,17 @@ const searchRooms = async (req, res) => {
 // @access  Private
 const generateRandomOccupancy = async (req, res) => {
   try {
-    // Get all rooms
     const allRooms = await Room.findAll();
-
-    // Randomly select 30-60% of rooms to mark as booked
-    const occupancyRate = 0.3 + Math.random() * 0.3; // 30-60%
+    const occupancyRate = 0.3 + Math.random() * 0.3;
     const numToBook = Math.floor(allRooms.length * occupancyRate);
-
-    // Shuffle and select random rooms
     const shuffled = allRooms.sort(() => 0.5 - Math.random());
-    const roomsToBook = shuffled.slice(0, numToBook);
-
-    // Mark selected rooms as unavailable
-    for (const room of roomsToBook) {
+    
+    for (const room of shuffled.slice(0, numToBook)) {
       room.isAvailable = false;
       await room.save();
     }
-
-    // Mark remaining rooms as available
-    const roomsToFree = shuffled.slice(numToBook);
-    for (const room of roomsToFree) {
+    
+    for (const room of shuffled.slice(numToBook)) {
       room.isAvailable = true;
       await room.save();
     }
@@ -234,15 +224,11 @@ const generateRandomOccupancy = async (req, res) => {
 // @access  Private
 const resetAllBookings = async (req, res) => {
   try {
-    const { BookingPostgres } = require('../models');
-
-    // Cancel all active bookings
-    await BookingPostgres.update(
+    await Booking.update(
       { status: 'cancelled' },
       { where: { status: 'confirmed' } }
     );
 
-    // Make all rooms available
     await Room.update(
       { isAvailable: true },
       { where: {} }
@@ -267,6 +253,60 @@ const resetAllBookings = async (req, res) => {
   }
 };
 
+// @desc    SEED ROOMS (EMERGENCY FIX)
+// @route   POST /api/rooms/seed-rooms
+// @access  Private
+const seedRooms = async (req, res) => {
+  try {
+    console.log('🏨 Seeding rooms...');
+    
+    // Delete all existing rooms
+    await Room.destroy({ where: {} });
+    
+    const roomsToCreate = [];
+    
+    // Create sample rooms (20 rooms total)
+    for (let i = 1; i <= 10; i++) {
+      roomsToCreate.push({
+        roomNumber: 100 + i,
+        floor: 1,
+        position: i,
+        roomType: i <= 7 ? 'standard' : 'deluxe',
+        isAvailable: true,
+        basePrice: i <= 7 ? 100.00 : 150.00
+      });
+    }
+    
+    for (let i = 1; i <= 10; i++) {
+      roomsToCreate.push({
+        roomNumber: 200 + i,
+        floor: 2,
+        position: i,
+        roomType: 'standard',
+        isAvailable: true,
+        basePrice: 100.00
+      });
+    }
+    
+    await Room.bulkCreate(roomsToCreate);
+    
+    res.json({
+      success: true,
+      message: `Successfully seeded ${roomsToCreate.length} rooms`,
+      data: {
+        totalRooms: roomsToCreate.length,
+        rooms: roomsToCreate.map(r => r.roomNumber)
+      }
+    });
+  } catch (error) {
+    console.error('Seed rooms error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+};
+
 module.exports = {
   getAllRooms,
   getAvailableRooms,
@@ -275,5 +315,6 @@ module.exports = {
   getRoomTypes,
   searchRooms,
   generateRandomOccupancy,
-  resetAllBookings
+  resetAllBookings,
+  seedRooms
 };

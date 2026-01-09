@@ -305,12 +305,13 @@ module.exports = {
   connect,
   checkConnection,
   close,
-  ensureUsersTable,  // ✅ NEW: Export this function
-  setupDatabaseTables, // ✅ NEW: Export this function
+  ensureUsersTable,
+  setupDatabaseTables,
   
   // For backward compatibility
   postgresql: sequelize,
-  sequelizePostgres: sequelize,
+  sequelizePostgres: sequelize, // ✅ CRITICAL FIX: Added this export
+  
   checkAllConnections,
   closeAllConnections,
   
