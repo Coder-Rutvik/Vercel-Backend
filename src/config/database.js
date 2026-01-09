@@ -3,6 +3,7 @@ require('dotenv').config();
 
 // Get database configuration from DATABASE_URL or individual variables
 let sequelizeConfig = {};
+let sequelize; // Declare here at the top
 
 if (process.env.DATABASE_URL) {
   console.log('🔌 Using DATABASE_URL for PostgreSQL connection...');
@@ -30,7 +31,7 @@ if (process.env.DATABASE_URL) {
     }
   };
   
-  var sequelize = new Sequelize(process.env.DATABASE_URL, sequelizeConfig);
+  sequelize = new Sequelize(process.env.DATABASE_URL, sequelizeConfig); // Remove var
   
 } else {
   console.log('🔌 Using individual environment variables for PostgreSQL connection...');
@@ -53,7 +54,7 @@ if (process.env.DATABASE_URL) {
   console.log(`   Host: ${dbConfig.host}:${dbConfig.port}`);
   console.log(`   Database: ${dbConfig.database}`);
 
-  var sequelize = new Sequelize(
+  sequelize = new Sequelize( // Remove var
     dbConfig.database,
     dbConfig.username,
     dbConfig.password,
