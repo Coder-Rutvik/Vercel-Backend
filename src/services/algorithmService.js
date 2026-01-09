@@ -1,3 +1,5 @@
+const { Op } = require('sequelize');
+
 class AlgorithmService {
   constructor() {
     this.HORIZONTAL_TIME = 1; // 1 minute per room
@@ -94,6 +96,90 @@ class AlgorithmService {
     }
 
     return null;
+  }
+
+  // New method for PDF examples validation
+  verifyPDFExamples() {
+    // Example 1 from PDF
+    const example1Rooms = [
+      { number: 101, floor: 1, position: 1 },
+      { number: 102, floor: 1, position: 2 },
+      { number: 105, floor: 1, position: 5 },
+      { number: 106, floor: 1, position: 6 }
+    ];
+    
+    const travelTime1 = this.calculateTravelTime(example1Rooms);
+    
+    // Example 2 from PDF
+    const example2Rooms = [
+      { number: 201, floor: 2, position: 1 },
+      { number: 202, floor: 2, position: 2 }
+    ];
+    
+    const travelTime2 = this.calculateTravelTime(example2Rooms);
+    
+    return {
+      example1: {
+        rooms: [101, 102, 105, 106],
+        travelTime: travelTime1,
+        expected: 5, // 5 minutes as per PDF
+        passed: travelTime1 === 5
+      },
+      example2: {
+        rooms: [201, 202],
+        travelTime: travelTime2,
+        expected: 3, // 2 vertical + 1 horizontal = 3 minutes
+        passed: travelTime2 === 3
+      }
+    };
+  }
+
+  // Helper method for testing
+  testAlgorithm() {
+    console.log('🧪 Testing Algorithm Service...');
+    
+    // Test 1: Single floor rooms
+    const test1Rooms = [
+      { number: 101, floor: 1, position: 1 },
+      { number: 102, floor: 1, position: 2 },
+      { number: 103, floor: 1, position: 3 }
+    ];
+    
+    const test1Result = this.calculateTravelTime(test1Rooms);
+    console.log(`Test 1 - Single floor: ${test1Result} minutes (expected: 2)`);
+    
+    // Test 2: Multiple floors
+    const test2Rooms = [
+      { number: 101, floor: 1, position: 1 },
+      { number: 201, floor: 2, position: 1 },
+      { number: 301, floor: 3, position: 1 }
+    ];
+    
+    const test2Result = this.calculateTravelTime(test2Rooms);
+    console.log(`Test 2 - Multiple floors: ${test2Result} minutes (expected: 4)`);
+    
+    // Test 3: Mixed floors and positions
+    const test3Rooms = [
+      { number: 101, floor: 1, position: 1 },
+      { number: 102, floor: 1, position: 5 },
+      { number: 210, floor: 2, position: 10 }
+    ];
+    
+    const test3Result = this.calculateTravelTime(test3Rooms);
+    console.log(`Test 3 - Mixed: ${test3Result} minutes`);
+    
+    // Test PDF examples
+    const pdfResults = this.verifyPDFExamples();
+    console.log('📋 PDF Examples Validation:');
+    console.log(`  Example 1: ${pdfResults.example1.passed ? '✅ PASS' : '❌ FAIL'} (${pdfResults.example1.travelTime} minutes)`);
+    console.log(`  Example 2: ${pdfResults.example2.passed ? '✅ PASS' : '❌ FAIL'} (${pdfResults.example2.travelTime} minutes)`);
+    
+    return {
+      test1: { result: test1Result, passed: test1Result === 2 },
+      test2: { result: test2Result, passed: test2Result === 4 },
+      test3: { result: test3Result },
+      pdfExamples: pdfResults
+    };
   }
 }
 

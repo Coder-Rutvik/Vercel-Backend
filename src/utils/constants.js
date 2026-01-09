@@ -16,6 +16,21 @@ const HOTEL_CONFIG = {
     standard: 100.00,
     deluxe: 150.00,
     suite: 200.00
+  },
+  // PDF Requirements
+  PDF_REQUIREMENTS: {
+    totalRooms: 97,
+    floors: 10,
+    roomsPerFloor: [10, 10, 10, 10, 10, 10, 10, 10, 10, 7],
+    travelTime: {
+      horizontalPerRoom: 1,
+      verticalPerFloor: 2
+    },
+    booking: {
+      maxRooms: 5,
+      prioritySameFloor: true,
+      minimizeTravelTime: true
+    }
   }
 };
 
@@ -61,7 +76,9 @@ const ERROR_MESSAGES = {
   MAX_ROOMS_EXCEEDED: 'Cannot book more than 5 rooms at once',
   MIN_STAY_REQUIRED: 'Minimum stay is 1 night',
   PAST_CHECKIN: 'Check-in date cannot be in the past',
-  CANCELLATION_DEADLINE: 'Cannot cancel booking after check-in time'
+  CANCELLATION_DEADLINE: 'Cannot cancel booking after check-in time',
+  NO_ROOMS_AVAILABLE: 'No rooms available for selected dates',
+  INSUFFICIENT_ROOMS: 'Not enough rooms available'
 };
 
 // Success messages
@@ -71,7 +88,9 @@ const SUCCESS_MESSAGES = {
   BOOKING_SUCCESS: 'Booking successful',
   CANCELLATION_SUCCESS: 'Booking cancelled successfully',
   UPDATE_SUCCESS: 'Updated successfully',
-  DELETE_SUCCESS: 'Deleted successfully'
+  DELETE_SUCCESS: 'Deleted successfully',
+  ROOMS_RESET: 'All rooms reset successfully',
+  RANDOM_OCCUPANCY_GENERATED: 'Random occupancy generated successfully'
 };
 
 // Status codes
@@ -94,6 +113,88 @@ const EMAIL_TEMPLATES = {
   PASSWORD_RESET: 'password_reset'
 };
 
+// PDF Examples from assignment
+const PDF_EXAMPLES = [
+  {
+    scenario: "Example 1",
+    availableRooms: {
+      floor1: [101, 102, 105, 106],
+      floor2: [201, 202, 203, 210],
+      floor3: [301, 302]
+    },
+    bookRooms: 4,
+    expectedResult: [101, 102, 105, 106],
+    reason: "Rooms on Floor 1 minimize total travel time (5 minutes)"
+  },
+  {
+    scenario: "Example 2",
+    availableRooms: {
+      floor1: [101, 102],
+      floor2: [201, 202, 203, 210],
+      floor3: [301, 302]
+    },
+    bookRooms: 2,
+    expectedResult: [201, 202],
+    reason: "Minimizes vertical (2 minutes) and horizontal (1 minute) travel times = 3 minutes total"
+  }
+];
+
+// Test data for development
+const TEST_DATA = {
+  // Test hotel structure
+  hotelStructure: {
+    floors: [
+      { number: 1, rooms: 10, start: 101, end: 110 },
+      { number: 2, rooms: 10, start: 201, end: 210 },
+      { number: 3, rooms: 10, start: 301, end: 310 },
+      { number: 4, rooms: 10, start: 401, end: 410 },
+      { number: 5, rooms: 10, start: 501, end: 510 },
+      { number: 6, rooms: 10, start: 601, end: 610 },
+      { number: 7, rooms: 10, start: 701, end: 710 },
+      { number: 8, rooms: 10, start: 801, end: 810 },
+      { number: 9, rooms: 10, start: 901, end: 910 },
+      { number: 10, rooms: 7, start: 1001, end: 1007 }
+    ]
+  },
+  
+  // Test cases for algorithm
+  algorithmTestCases: [
+    {
+      name: "Same floor adjacent rooms",
+      rooms: [
+        { number: 101, floor: 1, position: 1 },
+        { number: 102, floor: 1, position: 2 }
+      ],
+      expectedTravelTime: 1
+    },
+    {
+      name: "Same floor distant rooms",
+      rooms: [
+        { number: 101, floor: 1, position: 1 },
+        { number: 110, floor: 1, position: 10 }
+      ],
+      expectedTravelTime: 9
+    },
+    {
+      name: "Different floors same position",
+      rooms: [
+        { number: 101, floor: 1, position: 1 },
+        { number: 201, floor: 2, position: 1 }
+      ],
+      expectedTravelTime: 2
+    },
+    {
+      name: "Mixed floors and positions",
+      rooms: [
+        { number: 101, floor: 1, position: 1 },
+        { number: 110, floor: 1, position: 10 },
+        { number: 201, floor: 2, position: 1 }
+      ],
+      expectedTravelTime: 11 // 9 horizontal + 2 vertical
+    }
+  ]
+};
+
 module.exports = {
   HOTEL_CONFIG,
   TRAVEL_TIME,
@@ -102,5 +203,7 @@ module.exports = {
   ERROR_MESSAGES,
   SUCCESS_MESSAGES,
   STATUS_CODES,
-  EMAIL_TEMPLATES
+  EMAIL_TEMPLATES,
+  PDF_EXAMPLES,
+  TEST_DATA
 };

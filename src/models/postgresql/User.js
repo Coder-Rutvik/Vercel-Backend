@@ -1,5 +1,5 @@
 const { DataTypes } = require('sequelize');
-const sequelizePostgres = require('../../config/postgresql');
+const { sequelizePostgres } = require('../../config/database');
 const bcrypt = require('bcryptjs');
 
 const UserPostgres = sequelizePostgres.define('User', {
@@ -68,7 +68,7 @@ const UserPostgres = sequelizePostgres.define('User', {
 });
 
 // Instance method to compare password
-UserPostgres.prototype.comparePassword = async function(candidatePassword) {
+UserPostgres.prototype.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 

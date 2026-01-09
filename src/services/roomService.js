@@ -1,5 +1,6 @@
 const { Sequelize, Op } = require('sequelize');
-const Room = require('../models/mysql/Room');
+const { RoomPostgres } = require('../models/postgresql');
+const Room = RoomPostgres;
 
 class RoomService {
   async getAllRooms(filters = {}) {

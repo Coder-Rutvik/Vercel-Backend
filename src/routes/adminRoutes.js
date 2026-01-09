@@ -20,12 +20,6 @@ router.route('/users')
 router.route('/bookings')
   .get(getAllBookings);
 
-router.route('/logs')
-  .get(getSystemLogs);
-
-router.route('/audit')
-  .get(getAuditTrail);
-
 router.route('/stats')
   .get(getDashboardStats);
 

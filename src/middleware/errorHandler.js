@@ -31,17 +31,6 @@ const errorHandler = (err, req, res, next) => {
     error.statusCode = 401;
   }
 
-  // Mongoose bad ObjectId
-  if (err.name === 'CastError') {
-    error.message = 'Resource not found';
-    error.statusCode = 404;
-  }
-
-  // Mongoose duplicate key
-  if (err.code === 11000) {
-    error.message = 'Duplicate field value entered';
-    error.statusCode = 400;
-  }
 
   // Default error
   res.status(error.statusCode || 500).json({

@@ -1,9 +1,9 @@
 const { Sequelize, Op } = require('sequelize');
-const User = require('../models/mysql/User');
-const Booking = require('../models/mysql/Booking');
-const Room = require('../models/mysql/Room');
-const Log = require('../models/mongodb/Log');
-const Audit = require('../models/mongodb/Audit');
+const { UserPostgres, BookingPostgres, RoomPostgres } = require('../models/postgresql');
+
+const User = UserPostgres;
+const Booking = BookingPostgres;
+const Room = RoomPostgres;
 
 // @desc    Get all users
 // @route   GET /api/admin/users
@@ -58,88 +58,7 @@ const getAllBookings = async (req, res) => {
   }
 };
 
-// @desc    Get system logs
-// @route   GET /api/admin/logs
-// @access  Private/Admin
-const getSystemLogs = async (req, res) => {
-  try {
-    const { level, startDate, endDate, page = 1, limit = 50 } = req.query;
-    
-    let query = {};
-    
-    if (level) {
-      query.level = level;
-    }
-    
-    if (startDate || endDate) {
-      query.timestamp = {};
-      if (startDate) query.timestamp.$gte = new Date(startDate);
-      if (endDate) query.timestamp.$lte = new Date(endDate);
-    }
-    
-    const logs = await Log.find(query)
-      .sort({ timestamp: -1 })
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit));
-    
-    const total = await Log.countDocuments(query);
-    
-    res.json({
-      success: true,
-      page: parseInt(page),
-      pages: Math.ceil(total / limit),
-      total,
-      data: logs
-    });
-  } catch (error) {
-    console.error('Get logs error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error'
-    });
-  }
-};
 
-// @desc    Get audit trail
-// @route   GET /api/admin/audit
-// @access  Private/Admin
-const getAuditTrail = async (req, res) => {
-  try {
-    const { entity, action, startDate, endDate, page = 1, limit = 50 } = req.query;
-    
-    let query = {};
-    
-    if (entity) query.entity = entity;
-    if (action) query.action = action;
-    
-    if (startDate || endDate) {
-      query.timestamp = {};
-      if (startDate) query.timestamp.$gte = new Date(startDate);
-      if (endDate) query.timestamp.$lte = new Date(endDate);
-    }
-    
-    const audits = await Audit.find(query)
-      .sort({ timestamp: -1 })
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit));
-    
-    const total = await Audit.countDocuments(query);
-    
-    res.json({
-      success: true,
-      page: parseInt(page),
-      pages: Math.ceil(total / limit),
-      total,
-      data: audits
-    });
-  } catch (error) {
-    console.error('Get audit error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error'
-    });
-  }
-};
 
 // @desc    Update room
 // @route   PUT /api/admin/rooms/:id
@@ -171,21 +90,25 @@ const updateRoom = async (req, res) => {
     
     await room.save();
     
-    // Log to audit trail
-    await Audit.create({
-      entity: 'Room',
-      entityId: id.toString(),
-      action: 'UPDATE',
-      oldValue: oldValues,
-      newValue: {
-        roomType: room.roomType,
-        basePrice: room.basePrice,
-        isAvailable: room.isAvailable
-      },
-      changedBy: req.user.email,
-      changedById: req.user.userId.toString(),
-      ipAddress: req.ip
-    });
+    // Audit: logged to console
+    try {
+      console.log('AUDIT: Room Update', {
+        entity: 'Room',
+        entityId: id.toString(),
+        action: 'UPDATE',
+        oldValue: oldValues,
+        newValue: {
+          roomType: room.roomType,
+          basePrice: room.basePrice,
+          isAvailable: room.isAvailable
+        },
+        changedBy: req.user.email,
+        changedById: req.user.userId.toString(),
+        ipAddress: req.ip
+      });
+    } catch (err) {
+      console.error('Audit log error:', err);
+    }
     
     res.json({
       success: true,
@@ -207,7 +130,7 @@ const updateRoom = async (req, res) => {
 const getDashboardStats = async (req, res) => {
   try {
     // Check database connections
-    const dbConnections = require('../config/db-connections');
+    const dbConnections = require('../config/database');
     const dbStatus = await dbConnections.checkAllConnections();
     // Get total rooms
     const totalRooms = await Room.count();
@@ -265,9 +188,7 @@ const getDashboardStats = async (req, res) => {
           formatted: `₹${parseFloat(totalRevenue).toLocaleString('en-IN')}`
         },
         databases: {
-          mysql: dbStatus.mysql ? 'connected' : 'disconnected',
-          postgresql: dbStatus.postgresql ? 'connected' : 'disconnected',
-          mongodb: dbStatus.mongodb ? 'connected' : 'disconnected'
+          postgresql: dbStatus.postgresql.connected ? 'connected' : `disconnected (${dbStatus.postgresql.error})`
         }
       }
     });
@@ -283,8 +204,6 @@ const getDashboardStats = async (req, res) => {
 module.exports = {
   getAllUsers,
   getAllBookings,
-  getSystemLogs,
-  getAuditTrail,
   updateRoom,
   getDashboardStats
 };

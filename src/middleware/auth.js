@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/mysql/User');
+const { UserPostgres } = require('../models/postgresql');
+const User = UserPostgres;
 
 const protect = async (req, res, next) => {
   let token;

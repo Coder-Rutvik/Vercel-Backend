@@ -1,12 +1,12 @@
-const Booking = require('../models/mysql/Booking');
-const Room = require('../models/mysql/Room');
-const User = require('../models/mysql/User');
-const { BookingPostgres, UserPostgres } = require('../models/postgresql');
+const { BookingPostgres, UserPostgres, RoomPostgres } = require('../models/postgresql');
 const { Op } = require('sequelize');
 const algorithmService = require('../services/algorithmService');
 const bookingService = require('../services/bookingService');
-const Log = require('../models/mongodb/Log');
-const Audit = require('../models/mongodb/Audit');
+
+// Use Postgres models as primary
+const Booking = BookingPostgres;
+const User = UserPostgres;
+const Room = RoomPostgres;
 
 // @desc    Book rooms
 // @route   POST /api/bookings
@@ -25,8 +25,8 @@ const bookRooms = async (req, res) => {
       });
     }
 
-    // Find optimal rooms
-    const optimalRooms = await bookingService.findOptimalRooms(numRooms);
+    // Find optimal rooms with date check
+    const optimalRooms = await bookingService.findOptimalRooms(numRooms, checkInDate, checkOutDate);
     if (!optimalRooms) {
       return res.status(400).json({
         success: false,
@@ -50,44 +50,20 @@ const bookRooms = async (req, res) => {
       paymentStatus: 'pending'
     });
 
-    // Dual Write: Create booking in PostgreSQL
-    try {
-      await BookingPostgres.create({
-        bookingId: booking.bookingId, // Sync bookingId
-        userId: booking.userId,
-        rooms: booking.rooms,
-        totalRooms: booking.totalRooms,
-        travelTime: booking.travelTime,
-        totalPrice: booking.totalPrice,
-        bookingDate: booking.bookingDate,
-        checkInDate: booking.checkInDate,
-        checkOutDate: booking.checkOutDate,
-        status: booking.status,
-        paymentStatus: booking.paymentStatus
-      });
-      console.log('✅ Booking synced to PostgreSQL');
-    } catch (postgresError) {
-      console.error('⚠️ PostgreSQL sync failed (Booking create):', postgresError.message);
-    }
+    // Unified Write: PostgreSQL is the primary database
+    // All operations are already performed on Booking (which is BookingPostgres)
 
     // Update room availability
     await bookingService.updateRoomAvailability(optimalRooms.rooms.map(r => r.number), false);
 
-    // Log booking
+    // Log to console
     try {
-      await Log.create({
-        level: 'info',
-        message: `User ${userId} booked ${numRooms} rooms`,
+      console.log('LOG: BOOK_ROOMS', {
         userId: userId.toString(),
-        action: 'BOOK_ROOMS',
-        endpoint: '/api/bookings',
-        ipAddress: req.ip || 'unknown',
-        metadata: {
-          bookingId: booking.bookingId,
-          rooms: optimalRooms.rooms.map(r => r.number),
-          travelTime: optimalRooms.travelTime,
-          totalPrice
-        }
+        bookingId: booking.bookingId,
+        rooms: optimalRooms.rooms.map(r => r.number),
+        travelTime: optimalRooms.travelTime,
+        totalPrice
       });
     } catch (logError) {
       console.error('Logging error (non-critical):', logError);
@@ -231,40 +207,19 @@ const cancelBooking = async (req, res) => {
       });
     }
 
-    // Update booking status
+    // Unified Write: PostgreSQL is the primary database
     booking.status = 'cancelled';
     await booking.save();
-
-    // Dual Write: Cancel booking in PostgreSQL
-    try {
-      const bookingPostgres = await BookingPostgres.findOne({
-        where: { bookingId: id }
-      });
-      if (bookingPostgres) {
-        bookingPostgres.status = 'cancelled';
-        await bookingPostgres.save();
-        console.log('✅ Booking cancellation synced to PostgreSQL');
-      }
-    } catch (postgresError) {
-      console.error('⚠️ PostgreSQL sync failed (Booking cancel):', postgresError.message);
-    }
 
     // Make rooms available again
     await bookingService.updateRoomAvailability(booking.rooms, true);
 
-    // Log cancellation
+    // Log to console
     try {
-      await Log.create({
-        level: 'info',
-        message: `User ${userId} cancelled booking ${id}`,
+      console.log('LOG: CANCEL_BOOKING', {
         userId: userId.toString(),
-        action: 'CANCEL_BOOKING',
-        endpoint: `/api/bookings/${id}/cancel`,
-        ipAddress: req.ip || 'unknown',
-        metadata: {
-          bookingId: id,
-          rooms: booking.rooms
-        }
+        bookingId: id,
+        rooms: booking.rooms
       });
     } catch (logError) {
       console.error('Logging error (non-critical):', logError);

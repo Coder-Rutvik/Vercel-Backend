@@ -1,11 +1,9 @@
-const UserMySQL = require('../models/mysql/User');
 const { UserPostgres } = require('../models/postgresql');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 
-// Determine Primary User Model based on Environment
-const isPostgresPrimary = !!process.env.DATABASE_URL;
-const User = isPostgresPrimary ? UserPostgres : UserMySQL;
+// Use Postgres user model only
+const User = UserPostgres;
 
 // Helper function to retry database operations
 const retryOperation = async (operation, maxRetries = 3) => {
@@ -14,10 +12,10 @@ const retryOperation = async (operation, maxRetries = 3) => {
       return await operation();
     } catch (error) {
       console.error(`Attempt ${i + 1} failed:`, error.message);
-      
+
       // If it's the last retry, throw the error
       if (i === maxRetries - 1) throw error;
-      
+
       // Wait before retrying (exponential backoff)
       await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, i)));
     }
@@ -71,25 +69,7 @@ const register = async (req, res) => {
       });
     });
 
-    // Dual Write: Only sync to Postgres if we are NOT already using it as primary
-    if (!isPostgresPrimary) {
-      try {
-        await retryOperation(async () => {
-          await UserPostgres.create({
-            userId: user.userId,
-            name: user.name,
-            email: user.email,
-            password: user.password,
-            phone: user.phone,
-            role: user.role
-          });
-        });
-        console.log('✅ User synced to PostgreSQL');
-      } catch (postgresError) {
-        console.error('⚠️ PostgreSQL sync failed (User create):', postgresError.message);
-        // Continue even if sync fails
-      }
-    }
+    // Postgres is primary; no dual-write needed
 
     // Create token
     const token = jwt.sign(
@@ -110,7 +90,7 @@ const register = async (req, res) => {
     });
   } catch (error) {
     console.error('Register error:', error);
-    
+
     // Send more specific error message
     let errorMessage = 'Server error';
     if (error.message.includes('Connection terminated')) {
@@ -120,7 +100,7 @@ const register = async (req, res) => {
     } else if (error.name === 'SequelizeValidationError') {
       errorMessage = error.errors.map(e => e.message).join(', ');
     }
-    
+
     res.status(500).json({
       success: false,
       message: errorMessage,
@@ -193,12 +173,12 @@ const login = async (req, res) => {
     });
   } catch (error) {
     console.error('Login error:', error);
-    
+
     let errorMessage = 'Server error';
     if (error.message.includes('Connection terminated')) {
       errorMessage = 'Database connection issue. Please try again in a moment.';
     }
-    
+
     res.status(500).json({
       success: false,
       message: errorMessage,
@@ -260,24 +240,10 @@ const updateProfile = async (req, res) => {
     if (name) user.name = name;
     if (phone) user.phone = phone;
 
+    // Unified Write: PostgreSQL is the primary database
     await retryOperation(async () => {
       await user.save();
     });
-
-    // Dual Write: Update user in PostgreSQL (Only if not primary)
-    if (!isPostgresPrimary) {
-      try {
-        const userPostgres = await UserPostgres.findByPk(userId);
-        if (userPostgres) {
-          if (name) userPostgres.name = name;
-          if (phone) userPostgres.phone = phone;
-          await userPostgres.save();
-          console.log('✅ User synced to PostgreSQL (Update)');
-        }
-      } catch (postgresError) {
-        console.error('⚠️ PostgreSQL sync failed (User update):', postgresError.message);
-      }
-    }
 
     // Remove password from response
     const userResponse = user.toJSON();
@@ -339,25 +305,11 @@ const changePassword = async (req, res) => {
       });
     }
 
-    // Update password
+    // Unified Write: PostgreSQL is the primary database
     user.password = newPassword;
     await retryOperation(async () => {
       await user.save();
     });
-
-    // Dual Write: Update password in PostgreSQL (Only if not primary)
-    if (!isPostgresPrimary) {
-      try {
-        const userPostgres = await UserPostgres.findByPk(userId);
-        if (userPostgres) {
-          userPostgres.password = newPassword;
-          await userPostgres.save();
-          console.log('✅ User synced to PostgreSQL (Password change)');
-        }
-      } catch (postgresError) {
-        console.error('⚠️ PostgreSQL sync failed (Password change):', postgresError.message);
-      }
-    }
 
     res.json({
       success: true,

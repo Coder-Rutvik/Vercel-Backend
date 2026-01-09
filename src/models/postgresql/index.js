@@ -1,4 +1,4 @@
-const sequelizePostgres = require('../../config/postgresql');
+const { sequelizePostgres } = require('../../config/database');
 const UserPostgres = require('./User');
 const RoomPostgres = require('./Room');
 const BookingPostgres = require('./Booking');
