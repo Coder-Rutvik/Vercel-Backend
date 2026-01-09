@@ -1,7 +1,5 @@
 const { BookingPostgres, UserPostgres, RoomPostgres } = require('../models');
 const { Op } = require('sequelize');
-const algorithmService = require('../services/algorithmService');
-const bookingService = require('../services/bookingService');
 
 // Use Postgres models as primary
 const Booking = BookingPostgres;
@@ -16,33 +14,105 @@ const bookRooms = async (req, res) => {
     const { numRooms, checkInDate, checkOutDate } = req.body;
     const userId = req.user.userId;
 
-    // Validate booking
-    const validation = await bookingService.validateBooking(numRooms, checkInDate, checkOutDate);
-    if (!validation.valid) {
+    console.log('📅 Booking attempt by user:', userId, { numRooms, checkInDate, checkOutDate });
+
+    // ✅ SIMPLE VALIDATION
+    if (!numRooms || numRooms < 1 || numRooms > 5) {
       return res.status(400).json({
         success: false,
-        message: validation.message
+        message: 'Number of rooms must be between 1 and 5'
       });
     }
 
-    // Find optimal rooms with date check
-    const optimalRooms = await bookingService.findOptimalRooms(numRooms, checkInDate, checkOutDate);
-    if (!optimalRooms) {
+    if (!checkInDate || !checkOutDate) {
       return res.status(400).json({
         success: false,
-        message: `Not enough available rooms for ${numRooms} rooms`
+        message: 'Please provide check-in and check-out dates'
       });
     }
 
-    // Calculate price
-    const totalPrice = await bookingService.calculateTotalPrice(optimalRooms, checkInDate, checkOutDate);
+    const checkIn = new Date(checkInDate);
+    const checkOut = new Date(checkOutDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-    // Create booking
+    if (checkIn < today) {
+      return res.status(400).json({
+        success: false,
+        message: 'Check-in date cannot be in the past'
+      });
+    }
+
+    if (checkOut <= checkIn) {
+      return res.status(400).json({
+        success: false,
+        message: 'Check-out date must be after check-in date'
+      });
+    }
+
+    // ✅ FIND AVAILABLE ROOMS (NO COMPLEX ALGORITHM)
+    console.log('🔍 Looking for available rooms...');
+    const allAvailableRooms = await Room.findAll({
+      where: { isAvailable: true },
+      order: [['floor', 'ASC'], ['position', 'ASC']]
+    });
+
+    console.log(`📊 Found ${allAvailableRooms.length} available rooms`);
+
+    if (allAvailableRooms.length < numRooms) {
+      return res.status(400).json({
+        success: false,
+        message: `Not enough available rooms. Need ${numRooms}, but only ${allAvailableRooms.length} available`
+      });
+    }
+
+    // ✅ SIMPLE SELECTION: Take first N available rooms
+    const selectedRooms = allAvailableRooms.slice(0, numRooms);
+    const roomNumbers = selectedRooms.map(room => room.roomNumber);
+    
+    // ✅ CALCULATE TRAVEL TIME (SIMPLE LOGIC)
+    let travelTime = 0;
+    if (selectedRooms.length > 1) {
+      // Check if all rooms on same floor
+      const firstFloor = selectedRooms[0].floor;
+      const sameFloor = selectedRooms.every(room => room.floor === firstFloor);
+      
+      if (sameFloor) {
+        // All on same floor: calculate distance between positions
+        const positions = selectedRooms.map(r => r.position);
+        const maxPos = Math.max(...positions);
+        const minPos = Math.min(...positions);
+        travelTime = (maxPos - minPos) * 2; // 2 minutes per room gap
+      } else {
+        // Different floors: 3 minutes per room + 5 minutes per floor change
+        travelTime = (selectedRooms.length * 3) + 5;
+      }
+    }
+
+    // ✅ CALCULATE PRICE
+    const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
+    let totalPrice = 0;
+    selectedRooms.forEach(room => {
+      let pricePerNight = parseFloat(room.basePrice);
+      
+      // Weekend pricing
+      const checkInDay = checkIn.getDay(); // 0=Sunday, 5=Friday, 6=Saturday
+      if (checkInDay === 5 || checkInDay === 6) {
+        pricePerNight *= 1.2; // 20% weekend increase
+      }
+      
+      totalPrice += pricePerNight * nights;
+    });
+
+    totalPrice = parseFloat(totalPrice.toFixed(2));
+
+    // ✅ CREATE BOOKING
+    console.log('💾 Creating booking...');
     const booking = await Booking.create({
       userId,
-      rooms: optimalRooms.rooms.map(room => room.number),
+      rooms: roomNumbers,
       totalRooms: numRooms,
-      travelTime: optimalRooms.travelTime,
+      travelTime,
       totalPrice,
       checkInDate,
       checkOutDate,
@@ -50,45 +120,45 @@ const bookRooms = async (req, res) => {
       paymentStatus: 'pending'
     });
 
-    // Unified Write: PostgreSQL is the primary database
-    // All operations are already performed on Booking (which is BookingPostgres)
+    // ✅ UPDATE ROOM AVAILABILITY
+    await Room.update(
+      { isAvailable: false },
+      {
+        where: {
+          roomNumber: roomNumbers
+        }
+      }
+    );
 
-    // Update room availability
-    await bookingService.updateRoomAvailability(optimalRooms.rooms.map(r => r.number), false);
-
-    // Log to console
-    try {
-      console.log('LOG: BOOK_ROOMS', {
-        userId: userId.toString(),
-        bookingId: booking.bookingId,
-        rooms: optimalRooms.rooms.map(r => r.number),
-        travelTime: optimalRooms.travelTime,
-        totalPrice
-      });
-    } catch (logError) {
-      console.error('Logging error (non-critical):', logError);
-    }
+    console.log('✅ Booking created successfully:', {
+      bookingId: booking.bookingId,
+      rooms: roomNumbers,
+      travelTime,
+      totalPrice
+    });
 
     res.status(201).json({
       success: true,
-      message: 'Booking successful',
+      message: 'Booking successful!',
       data: {
         bookingId: booking.bookingId,
-        rooms: optimalRooms.rooms.map(r => r.number),
-        travelTime: optimalRooms.travelTime,
+        rooms: roomNumbers,
+        travelTime,
         totalPrice,
         checkInDate,
         checkOutDate,
         bookingDate: booking.bookingDate,
-        status: booking.status
+        status: booking.status,
+        nights: nights
       }
     });
 
   } catch (error) {
-    console.error('Booking error:', error);
+    console.error('❌ Booking error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Server error during booking',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -197,33 +267,20 @@ const cancelBooking = async (req, res) => {
       });
     }
 
-    // Check if check-in date is in future
-    const checkInDate = new Date(booking.checkInDate);
-    const today = new Date();
-    if (checkInDate <= today) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot cancel booking after check-in date'
-      });
-    }
-
-    // Unified Write: PostgreSQL is the primary database
     booking.status = 'cancelled';
     await booking.save();
 
     // Make rooms available again
-    await bookingService.updateRoomAvailability(booking.rooms, true);
+    await Room.update(
+      { isAvailable: true },
+      {
+        where: {
+          roomNumber: booking.rooms
+        }
+      }
+    );
 
-    // Log to console
-    try {
-      console.log('LOG: CANCEL_BOOKING', {
-        userId: userId.toString(),
-        bookingId: id,
-        rooms: booking.rooms
-      });
-    } catch (logError) {
-      console.error('Logging error (non-critical):', logError);
-    }
+    console.log('✅ Booking cancelled:', { bookingId: id, userId });
 
     res.json({
       success: true,
