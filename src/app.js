@@ -89,8 +89,8 @@ app.get('/', (req, res) => {
       }
     },
     emergencyFixes: {
-      autoCreateRooms: 'POST /api/auto-fix-rooms',
-      forceCreateRooms: 'POST /api/force-create-rooms'
+      autoCreateRooms: 'GET/POST /api/auto-fix-rooms',
+      forceCreateRooms: 'GET/POST /api/force-create-rooms'
     }
   });
 });
@@ -138,8 +138,8 @@ app.get('/api/db-test', async (req, res) => {
   }
 });
 
-// ✅ EMERGENCY FIX 1: Auto-create rooms
-app.post('/api/auto-fix-rooms', async (req, res) => {
+// ✅ EMERGENCY FIX HANDLER FUNCTIONS
+const handleAutoFixRooms = async (req, res) => {
   try {
     const { sequelize } = require('./config/database');
     
@@ -238,10 +238,9 @@ app.post('/api/auto-fix-rooms', async (req, res) => {
       sql: error.sql
     });
   }
-});
+};
 
-// ✅ EMERGENCY FIX 2: Force create rooms (destructive)
-app.post('/api/force-create-rooms', async (req, res) => {
+const handleForceCreateRooms = async (req, res) => {
   try {
     const { sequelize } = require('./config/database');
     
@@ -323,7 +322,14 @@ app.post('/api/force-create-rooms', async (req, res) => {
       message: error.message
     });
   }
-});
+};
+
+// ✅ EMERGENCY FIX ROUTES (BOTH GET AND POST)
+app.get('/api/auto-fix-rooms', handleAutoFixRooms);
+app.post('/api/auto-fix-rooms', handleAutoFixRooms);
+
+app.get('/api/force-create-rooms', handleForceCreateRooms);
+app.post('/api/force-create-rooms', handleForceCreateRooms);
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -340,8 +346,8 @@ app.use('*', (req, res) => {
       'GET    /',
       'GET    /api/health',
       'GET    /api/db-test',
-      'POST   /api/auto-fix-rooms (EMERGENCY)',
-      'POST   /api/force-create-rooms (EMERGENCY)',
+      'GET/POST /api/auto-fix-rooms (EMERGENCY)',
+      'GET/POST /api/force-create-rooms (EMERGENCY)',
       'POST   /api/auth/register',
       'POST   /api/auth/login',
       'GET    /api/auth/me',
