@@ -1,48 +1,83 @@
 const { Sequelize } = require('sequelize');
 require('dotenv').config();
 
-// Database configuration
-const dbConfig = {
-  database: process.env.POSTGRES_DATABASE || 'hotel_reservation_db',
-  username: process.env.POSTGRES_USER || 'postgres',
-  password: process.env.POSTGRES_PASSWORD || 'rutvik',
-  host: process.env.POSTGRES_HOST || 'localhost',
-  port: process.env.POSTGRES_PORT || 5432,
-  dialect: 'postgres',
-  logging: process.env.NODE_ENV === 'development' ? console.log : false,
-  pool: {
-    max: 5,
-    min: 0,
-    acquire: 30000,
-    idle: 10000
-  },
-  dialectOptions: {
-    ssl: false
-  }
-};
+// Get database configuration from DATABASE_URL or individual variables
+let sequelizeConfig = {};
 
-console.log('🔌 Connecting to PostgreSQL database...');
-console.log(`   Host: ${dbConfig.host}:${dbConfig.port}`);
-console.log(`   Database: ${dbConfig.database}`);
-
-// Initialize Sequelize
-const sequelize = new Sequelize(
-  dbConfig.database,
-  dbConfig.username,
-  dbConfig.password,
-  {
-    host: dbConfig.host,
-    port: dbConfig.port,
-    dialect: dbConfig.dialect,
-    logging: dbConfig.logging,
-    pool: dbConfig.pool,
-    dialectOptions: dbConfig.dialectOptions,
+if (process.env.DATABASE_URL) {
+  // Use DATABASE_URL if available (Render, Railway, etc.)
+  console.log('🔌 Using DATABASE_URL for PostgreSQL connection...');
+  sequelizeConfig = {
+    dialect: 'postgres',
+    logging: process.env.NODE_ENV === 'development' ? console.log : false,
+    pool: {
+      max: 5,
+      min: 0,
+      acquire: 30000,
+      idle: 10000
+    },
+    dialectOptions: {
+      ssl: process.env.PG_SSL === 'true' ? {
+        require: true,
+        rejectUnauthorized: false
+      } : false
+    },
     define: {
       timestamps: true,
       underscored: true
     }
-  }
-);
+  };
+  
+  // Create sequelize instance with DATABASE_URL
+  var sequelize = new Sequelize(process.env.DATABASE_URL, sequelizeConfig);
+  
+} else {
+  // Fallback to individual variables (for local development)
+  console.log('🔌 Using individual environment variables for PostgreSQL connection...');
+  const dbConfig = {
+    database: process.env.POSTGRES_DATABASE || 'hotel_reservation_db',
+    username: process.env.POSTGRES_USER || 'postgres',
+    password: process.env.POSTGRES_PASSWORD || 'rutvik',
+    host: process.env.POSTGRES_HOST || 'localhost',
+    port: process.env.POSTGRES_PORT || 5432,
+    dialect: 'postgres',
+    logging: process.env.NODE_ENV === 'development' ? console.log : false,
+    pool: {
+      max: 5,
+      min: 0,
+      acquire: 30000,
+      idle: 10000
+    },
+    dialectOptions: {
+      ssl: process.env.PG_SSL === 'true' ? {
+        require: true,
+        rejectUnauthorized: false
+      } : false
+    }
+  };
+
+  console.log(`   Host: ${dbConfig.host}:${dbConfig.port}`);
+  console.log(`   Database: ${dbConfig.database}`);
+
+  // Initialize Sequelize
+  var sequelize = new Sequelize(
+    dbConfig.database,
+    dbConfig.username,
+    dbConfig.password,
+    {
+      host: dbConfig.host,
+      port: dbConfig.port,
+      dialect: dbConfig.dialect,
+      logging: dbConfig.logging,
+      pool: dbConfig.pool,
+      dialectOptions: dbConfig.dialectOptions,
+      define: {
+        timestamps: true,
+        underscored: true
+      }
+    }
+  );
+}
 
 // Test the connection
 const connect = async () => {
