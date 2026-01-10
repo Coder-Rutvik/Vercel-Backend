@@ -136,8 +136,12 @@ async function initializeDatabase() {
 
       console.log('✅ Database setup complete');
 
-      // Create rooms after database setup
-      await createRoomsAutomatically();
+      // Skip heavy room creation in Vercel environment to avoid timeout
+      if (!process.env.VERCEL) {
+        await createRoomsAutomatically();
+      } else {
+        console.log('⏩ Skipping automatic room creation in Vercel environment');
+      }
     } else {
       console.warn('⚠️ PostgreSQL not connected - running in limited mode');
     }
@@ -154,68 +158,77 @@ async function initializeDatabase() {
   console.log('✅ Database initialization complete\n');
 }
 
-// Start server
-const startServer = async () => {
-  try {
-    console.log('\n🚀 Starting Express server...');
+// Start server or Export for Vercel
+if (process.env.VERCEL) {
+  // Vercel Serverless Function mode
+  console.log('🚀 Running in Vercel Serverless mode');
+  // Trigger DB init but don't wait for it to export app
+  initializeDatabase();
+  module.exports = app;
+} else {
+  // Local/Standard Server mode
+  const startServer = async () => {
+    try {
+      console.log('\n🚀 Starting Express server...');
 
-    const server = app.listen(PORT, '0.0.0.0', () => {
-      console.log(`✅ Express server running on port ${PORT}`);
-      console.log(`🌐 Local URL: http://localhost:${PORT}`);
-      console.log(`🔍 Health endpoint: http://localhost:${PORT}/api/health`);
-      console.log('===========================================\n');
+      const server = app.listen(PORT, '0.0.0.0', () => {
+        console.log(`✅ Express server running on port ${PORT}`);
+        console.log(`🌐 Local URL: http://localhost:${PORT}`);
+        console.log(`🔍 Health endpoint: http://localhost:${PORT}/api/health`);
+        console.log('===========================================\n');
 
-      // Initialize database in background
-      setTimeout(initializeDatabase, 1000);
-    });
-
-    server.on('error', (error) => {
-      console.error('❌ Server error:', error);
-      process.exit(1);
-    });
-
-    const gracefulShutdown = async (signal) => {
-      console.log(`\n🔄 ${signal} received. Shutting down gracefully...`);
-
-      server.close(async () => {
-        console.log('✅ HTTP server closed');
-
-        try {
-          const { closeAllConnections } = require('./src/config/database');
-          await closeAllConnections();
-          console.log('✅ Database connections closed');
-        } catch (dbError) {
-          console.error('❌ Error closing databases:', dbError.message);
-        }
-
-        console.log('👋 Shutdown complete');
-        process.exit(0);
+        // Initialize database in background
+        setTimeout(initializeDatabase, 1000);
       });
 
-      setTimeout(() => {
-        console.error('❌ Forcing shutdown after timeout');
+      server.on('error', (error) => {
+        console.error('❌ Server error:', error);
         process.exit(1);
-      }, 10000);
-    };
+      });
 
-    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+      const gracefulShutdown = async (signal) => {
+        console.log(`\n🔄 ${signal} received. Shutting down gracefully...`);
 
-  } catch (error) {
-    console.error('❌ Failed to start server:', error);
+        server.close(async () => {
+          console.log('✅ HTTP server closed');
+
+          try {
+            const { closeAllConnections } = require('./src/config/database');
+            await closeAllConnections();
+            console.log('✅ Database connections closed');
+          } catch (dbError) {
+            console.error('❌ Error closing databases:', dbError.message);
+          }
+
+          console.log('👋 Shutdown complete');
+          process.exit(0);
+        });
+
+        setTimeout(() => {
+          console.error('❌ Forcing shutdown after timeout');
+          process.exit(1);
+        }, 10000);
+      };
+
+      process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+      process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+    } catch (error) {
+      console.error('❌ Failed to start server:', error);
+      process.exit(1);
+    }
+  };
+
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Unhandled Promise Rejection at:', promise);
+    console.error('Reason:', reason);
+  });
+
+  process.on('uncaughtException', (error) => {
+    console.error('❌ Uncaught Exception:', error);
+    console.error('Stack:', error.stack);
     process.exit(1);
-  }
-};
+  });
 
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Unhandled Promise Rejection at:', promise);
-  console.error('Reason:', reason);
-});
-
-process.on('uncaughtException', (error) => {
-  console.error('❌ Uncaught Exception:', error);
-  console.error('Stack:', error.stack);
-  process.exit(1);
-});
-
-startServer();
+  startServer();
+}
