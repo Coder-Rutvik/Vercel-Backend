@@ -7,9 +7,9 @@ let sequelize; // Declare here at the top
 
 if (process.env.DATABASE_URL) {
   console.log('🔌 Using DATABASE_URL for PostgreSQL connection...');
-  
+
   const isRender = process.env.DATABASE_URL.includes('render.com');
-  
+
   sequelizeConfig = {
     dialect: 'postgres',
     logging: process.env.NODE_ENV === 'development' ? console.log : false,
@@ -30,9 +30,9 @@ if (process.env.DATABASE_URL) {
       underscored: true
     }
   };
-  
+
   sequelize = new Sequelize(process.env.DATABASE_URL, sequelizeConfig); // Remove var
-  
+
 } else {
   console.log('🔌 Using individual environment variables for PostgreSQL connection...');
   const dbConfig = {
@@ -76,7 +76,7 @@ if (process.env.DATABASE_URL) {
 const ensureUsersTable = async () => {
   try {
     console.log('🔍 Checking if users table exists...');
-    
+
     try {
       await sequelize.query('SELECT 1 FROM users LIMIT 1');
       console.log('✅ Users table exists');
@@ -84,7 +84,7 @@ const ensureUsersTable = async () => {
     } catch (queryError) {
       if (queryError.message.includes('does not exist') || queryError.code === '42P01') {
         console.log('📝 Users table not found. Creating...');
-        
+
         const createTableSQL = `
           CREATE TABLE users (
             user_id SERIAL PRIMARY KEY,
@@ -100,7 +100,7 @@ const ensureUsersTable = async () => {
           
           CREATE INDEX idx_users_email ON users(email);
         `;
-        
+
         await sequelize.query(createTableSQL);
         console.log('✅ Users table created successfully');
         return true;
@@ -109,7 +109,7 @@ const ensureUsersTable = async () => {
     }
   } catch (error) {
     console.error('❌ ensureUsersTable failed:', error.message);
-    
+
     try {
       console.log('🔄 Trying simple table creation...');
       const simpleSQL = `
@@ -135,9 +135,9 @@ const ensureUsersTable = async () => {
 const setupDatabaseTables = async () => {
   try {
     console.log('🛠️ Setting up database tables...');
-    
+
     await ensureUsersTable();
-    
+
     try {
       await sequelize.query('SELECT 1 FROM rooms LIMIT 1');
       console.log('✅ Rooms table exists');
@@ -151,7 +151,7 @@ const setupDatabaseTables = async () => {
             floor INTEGER NOT NULL,
             position INTEGER NOT NULL,
             room_type VARCHAR(20) DEFAULT 'standard',
-            is_available BOOLEAN DEFAULT true,
+            status VARCHAR(20) DEFAULT 'not-booked',
             base_price DECIMAL(10,2) DEFAULT 100.00,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -160,7 +160,7 @@ const setupDatabaseTables = async () => {
         console.log('✅ Rooms table created');
       }
     }
-    
+
     try {
       await sequelize.query('SELECT 1 FROM bookings LIMIT 1');
       console.log('✅ Bookings table exists');
@@ -188,7 +188,7 @@ const setupDatabaseTables = async () => {
         console.log('✅ Bookings table created');
       }
     }
-    
+
     console.log('🎉 All database tables setup complete');
     return true;
   } catch (error) {
@@ -204,17 +204,17 @@ const connect = async () => {
     try {
       await sequelize.authenticate();
       console.log('✅ PostgreSQL connected successfully');
-      
+
       await setupDatabaseTables();
-      
+
       const [result] = await sequelize.query('SELECT version()');
       console.log('📊 PostgreSQL version:', result[0]?.version?.split(' ')[1] || 'Unknown');
-      
+
       return sequelize;
     } catch (error) {
       retries--;
       console.error(`❌ PostgreSQL connection failed. Retries left: ${retries}`, error.message);
-      
+
       if (retries === 0) {
         console.error('❌ All PostgreSQL connection attempts failed');
         if (process.env.NODE_ENV === 'production') {
@@ -223,7 +223,7 @@ const connect = async () => {
         }
         throw error;
       }
-      
+
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
   }
@@ -233,15 +233,15 @@ const connect = async () => {
 const checkConnection = async () => {
   try {
     await sequelize.authenticate();
-    
-    return { 
+
+    return {
       connected: true,
       message: 'PostgreSQL connected successfully'
     };
   } catch (error) {
     console.error('❌ PostgreSQL connection check failed:', error.message);
-    return { 
-      connected: false, 
+    return {
+      connected: false,
       error: error.message
     };
   }
@@ -250,7 +250,7 @@ const checkConnection = async () => {
 // For backward compatibility
 const checkAllConnections = async () => {
   const status = await checkConnection();
-  
+
   return {
     postgresql: {
       connected: status.connected,
@@ -266,8 +266,8 @@ const close = async () => {
     await sequelize.close();
     return { closed: true };
   } catch (error) {
-    return { 
-      closed: false, 
+    return {
+      closed: false,
       error: error.message
     };
   }
@@ -289,13 +289,13 @@ module.exports = {
   close,
   ensureUsersTable,
   setupDatabaseTables,
-  
+
   postgresql: sequelize,
   sequelizePostgres: sequelize,
-  
+
   checkAllConnections,
   closeAllConnections,
-  
+
   getPostgresConnection: () => {
     console.warn('⚠️ getPostgresConnection() is deprecated. Use the exported sequelize instance directly.');
     return sequelize;

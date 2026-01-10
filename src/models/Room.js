@@ -1,8 +1,7 @@
-// src/models/Room.js - UPDATED
 const { DataTypes } = require('sequelize');
-const { sequelize } = require('../config/database');  // ✅ CORRECT PATH
+const { sequelize } = require('../config/database');
 
-const RoomPostgres = sequelize.define('Room', {
+const Room = sequelize.define('Room', {
   roomId: {
     type: DataTypes.INTEGER,
     primaryKey: true,
@@ -21,37 +20,27 @@ const RoomPostgres = sequelize.define('Room', {
   },
   position: {
     type: DataTypes.INTEGER,
-    allowNull: false,
-    comment: 'Position on floor (1-10 for floors 1-9, 1-7 for floor 10)'
+    allowNull: false
   },
   roomType: {
-    type: DataTypes.ENUM('standard', 'deluxe', 'suite'),
+    type: DataTypes.STRING(20),
     defaultValue: 'standard',
     field: 'room_type'
   },
-  isAvailable: {
-    type: DataTypes.BOOLEAN,
-    defaultValue: true,
-    field: 'is_available'
+  status: {
+    type: DataTypes.STRING(20),
+    defaultValue: 'not-booked',
+    field: 'status'
   },
   basePrice: {
     type: DataTypes.DECIMAL(10, 2),
     defaultValue: 100.00,
     field: 'base_price'
-  },
-  createdAt: {
-    type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW,
-    field: 'created_at'
-  },
-  updatedAt: {
-    type: DataTypes.DATE,
-    defaultValue: DataTypes.NOW,
-    field: 'updated_at'
   }
 }, {
   tableName: 'rooms',
-  timestamps: true
+  timestamps: true,
+  underscored: true
 });
 
-module.exports = RoomPostgres;
+module.exports = Room;

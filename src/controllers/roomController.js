@@ -1,78 +1,14 @@
 const { Room, Booking } = require('../models');
 const { Sequelize, Op } = require('sequelize');
 
-// @desc    Create sample rooms
-// @route   POST /api/rooms/create-sample
-// @access  Public
-const createSampleRooms = async (req, res) => {
-  try {
-    console.log('🏨 Creating sample rooms...');
-    
-    // Delete existing rooms
-    await Room.destroy({ where: {} });
-    
-    const roomsToCreate = [];
-    
-    // Create 20 sample rooms (for quick testing)
-    for (let i = 1; i <= 10; i++) {
-      roomsToCreate.push({
-        roomNumber: 100 + i,
-        floor: 1,
-        position: i,
-        roomType: i <= 7 ? 'standard' : 'deluxe',
-        isAvailable: true,
-        basePrice: i <= 7 ? 100.00 : 150.00
-      });
-    }
-    
-    for (let i = 1; i <= 10; i++) {
-      roomsToCreate.push({
-        roomNumber: 200 + i,
-        floor: 2,
-        position: i,
-        roomType: 'standard',
-        isAvailable: true,
-        basePrice: 100.00
-      });
-    }
-    
-    await Room.bulkCreate(roomsToCreate);
-    
-    res.json({
-      success: true,
-      message: `Successfully created ${roomsToCreate.length} sample rooms`,
-      data: {
-        totalRooms: roomsToCreate.length,
-        rooms: roomsToCreate.map(r => r.roomNumber)
-      }
-    });
-  } catch (error) {
-    console.error('Create sample rooms error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to create rooms'
-    });
-  }
-};
-
 // @desc    Get all rooms
 // @route   GET /api/rooms
 // @access  Public
 const getAllRooms = async (req, res) => {
   try {
     const rooms = await Room.findAll({
-      order: [['floor', 'ASC'], ['position', 'ASC']]
+      order: [['roomNumber', 'ASC']]
     });
-
-    // If no rooms, create sample ones
-    if (rooms.length === 0) {
-      return res.json({
-        success: true,
-        count: 0,
-        message: 'No rooms found. Use POST /api/rooms/create-sample to create rooms',
-        data: []
-      });
-    }
 
     res.json({
       success: true,
@@ -80,7 +16,7 @@ const getAllRooms = async (req, res) => {
       data: rooms
     });
   } catch (error) {
-    console.error('Get rooms error:', error);
+    console.error('Get all rooms error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error'
@@ -94,7 +30,7 @@ const getAllRooms = async (req, res) => {
 const getAvailableRooms = async (req, res) => {
   try {
     const rooms = await Room.findAll({
-      where: { isAvailable: true },
+      where: { status: 'not-booked' },
       order: [['floor', 'ASC'], ['position', 'ASC']]
     });
 
@@ -187,7 +123,7 @@ const getRoomTypes = async (req, res) => {
         'roomType',
         [Sequelize.fn('COUNT', Sequelize.col('room_id')), 'count'],
         [Sequelize.fn('AVG', Sequelize.col('base_price')), 'avgPrice'],
-        [Sequelize.fn('SUM', Sequelize.literal('CASE WHEN is_available = true THEN 1 ELSE 0 END')), 'available']
+        [Sequelize.fn('SUM', Sequelize.literal("CASE WHEN status = 'not-booked' THEN 1 ELSE 0 END")), 'available']
       ],
       group: ['roomType'],
       raw: true
@@ -217,7 +153,10 @@ const searchRooms = async (req, res) => {
 
     if (floor) where.floor = floor;
     if (roomType) where.roomType = roomType;
-    if (available !== undefined) where.isAvailable = available === 'true';
+
+    if (available !== undefined) {
+      where.status = available === 'true' ? 'not-booked' : 'booked';
+    }
 
     if (minPrice || maxPrice) {
       where.basePrice = {};
@@ -253,16 +192,21 @@ const generateRandomOccupancy = async (req, res) => {
     const occupancyRate = 0.3 + Math.random() * 0.3;
     const numToBook = Math.floor(allRooms.length * occupancyRate);
     const shuffled = allRooms.sort(() => 0.5 - Math.random());
-    
-    for (const room of shuffled.slice(0, numToBook)) {
-      room.isAvailable = false;
+
+    const bookedRooms = shuffled.slice(0, numToBook);
+    const unbookedRooms = shuffled.slice(numToBook);
+
+    for (const room of bookedRooms) {
+      room.status = 'booked';
       await room.save();
     }
-    
-    for (const room of shuffled.slice(numToBook)) {
-      room.isAvailable = true;
+
+    for (const room of unbookedRooms) {
+      room.status = 'not-booked';
       await room.save();
     }
+
+    const bookedNumbers = bookedRooms.map(r => r.roomNumber);
 
     res.json({
       success: true,
@@ -271,7 +215,8 @@ const generateRandomOccupancy = async (req, res) => {
         totalRooms: allRooms.length,
         occupiedRooms: numToBook,
         availableRooms: allRooms.length - numToBook,
-        occupancyRate: (occupancyRate * 100).toFixed(1) + '%'
+        occupancyRate: (occupancyRate * 100).toFixed(1) + '%',
+        bookedRooms: bookedNumbers
       }
     });
   } catch (error) {
@@ -294,7 +239,7 @@ const resetAllBookings = async (req, res) => {
     );
 
     await Room.update(
-      { isAvailable: true },
+      { status: 'not-booked' },
       { where: {} }
     );
 
@@ -317,62 +262,7 @@ const resetAllBookings = async (req, res) => {
   }
 };
 
-// @desc    SEED ROOMS (EMERGENCY FIX)
-// @route   POST /api/rooms/seed-rooms
-// @access  Private
-const seedRooms = async (req, res) => {
-  try {
-    console.log('🏨 Seeding rooms...');
-    
-    // Delete all existing rooms
-    await Room.destroy({ where: {} });
-    
-    const roomsToCreate = [];
-    
-    // Create sample rooms (20 rooms total)
-    for (let i = 1; i <= 10; i++) {
-      roomsToCreate.push({
-        roomNumber: 100 + i,
-        floor: 1,
-        position: i,
-        roomType: i <= 7 ? 'standard' : 'deluxe',
-        isAvailable: true,
-        basePrice: i <= 7 ? 100.00 : 150.00
-      });
-    }
-    
-    for (let i = 1; i <= 10; i++) {
-      roomsToCreate.push({
-        roomNumber: 200 + i,
-        floor: 2,
-        position: i,
-        roomType: 'standard',
-        isAvailable: true,
-        basePrice: 100.00
-      });
-    }
-    
-    await Room.bulkCreate(roomsToCreate);
-    
-    res.json({
-      success: true,
-      message: `Successfully seeded ${roomsToCreate.length} rooms`,
-      data: {
-        totalRooms: roomsToCreate.length,
-        rooms: roomsToCreate.map(r => r.roomNumber)
-      }
-    });
-  } catch (error) {
-    console.error('Seed rooms error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error'
-    });
-  }
-};
-
 module.exports = {
-  createSampleRooms,
   getAllRooms,
   getAvailableRooms,
   getRoomsByFloor,
@@ -380,6 +270,5 @@ module.exports = {
   getRoomTypes,
   searchRooms,
   generateRandomOccupancy,
-  resetAllBookings,
-  seedRooms
+  resetAllBookings
 };
