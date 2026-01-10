@@ -8,8 +8,6 @@ let sequelize; // Declare here at the top
 if (process.env.DATABASE_URL) {
   console.log('🔌 Using DATABASE_URL for PostgreSQL connection...');
 
-  const isRender = process.env.DATABASE_URL.includes('render.com');
-
   sequelizeConfig = {
     dialect: 'postgres',
     logging: process.env.NODE_ENV === 'development' ? console.log : false,
@@ -20,7 +18,7 @@ if (process.env.DATABASE_URL) {
       idle: 10000
     },
     dialectOptions: {
-      ssl: isRender || process.env.PG_SSL === 'true' ? {
+      ssl: process.env.PG_SSL === 'true' || process.env.DATABASE_URL.includes('ssl=true') ? {
         require: true,
         rejectUnauthorized: false
       } : false
