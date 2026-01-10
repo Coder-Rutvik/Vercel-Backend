@@ -23,9 +23,9 @@ if (process.env.DATABASE_URL) {
       idle: 10000
     },
     dialectOptions: {
-      ssl: process.env.PG_SSL === 'true' ||
-        process.env.DATABASE_URL.includes('ssl=true') ||
-        process.env.DATABASE_URL.includes('sslmode=require') ? {
+      ssl: process.env.NODE_ENV === 'production' ||
+        process.env.PG_SSL === 'true' ||
+        (process.env.DATABASE_URL && process.env.DATABASE_URL.includes('ssl')) ? {
         require: true,
         rejectUnauthorized: false
       } : false
