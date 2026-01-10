@@ -10,6 +10,7 @@ if (process.env.DATABASE_URL) {
 
   sequelizeConfig = {
     dialect: 'postgres',
+    dialectModule: require('pg'), // Explicitly require pg for Vercel/Bundlers
     logging: process.env.NODE_ENV === 'development' ? console.log : false,
     pool: {
       max: 5,
@@ -60,6 +61,7 @@ if (process.env.DATABASE_URL) {
       host: dbConfig.host,
       port: dbConfig.port,
       dialect: dbConfig.dialect,
+      dialectModule: require('pg'), // Explicitly require pg for Bundlers
       logging: dbConfig.logging,
       pool: dbConfig.pool,
       define: {
