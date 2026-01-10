@@ -153,6 +153,10 @@ const seedRooms = async () => {
 const setupDatabaseTables = async () => {
   try {
     console.log('🛠️ Setting up database tables...');
+
+    // Enable UUID extension for Postgres
+    await sequelize.query('CREATE EXTENSION IF NOT EXISTS "pgcrypto";');
+
     await ensureUsersTable();
 
     let roomsCreated = false;

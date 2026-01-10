@@ -1,44 +1,6 @@
 const { Booking, User, Room } = require('../models');
 const { Op } = require('sequelize');
-
-// Helper function to ensure rooms exist
-const ensureRoomsExist = async () => {
-  try {
-    const roomCount = await Room.count();
-    if (roomCount === 0) {
-      console.log('🏨 No rooms found. Creating 97 rooms...');
-      const rooms = [];
-      for (let floor = 1; floor <= 9; floor++) {
-        for (let pos = 1; pos <= 10; pos++) {
-          rooms.push({
-            roomNumber: (floor * 100) + pos,
-            floor: floor,
-            position: pos,
-            roomType: 'standard',
-            basePrice: 100.00,
-            status: 'not-booked'
-          });
-        }
-      }
-      for (let pos = 1; pos <= 7; pos++) {
-        rooms.push({
-          roomNumber: 1000 + pos,
-          floor: 10,
-          position: pos,
-          roomType: 'standard',
-          basePrice: 100.00,
-          status: 'not-booked'
-        });
-      }
-      await Room.bulkCreate(rooms);
-      return 97;
-    }
-    return roomCount;
-  } catch (error) {
-    console.error('❌ Failed to ensure rooms:', error);
-    return 0;
-  }
-};
+const { sequelize } = require('../config/database');
 
 // @desc    Book rooms
 // @route   POST /api/bookings
@@ -164,31 +126,45 @@ const bookRooms = async (req, res) => {
     const roomNumbers = selectedRooms.map(room => room.roomNumber);
     const totalPrice = parseFloat((numRooms * selectedRooms[0].basePrice * nights).toFixed(2));
 
-    const booking = await Booking.create({
-      userId,
-      rooms: roomNumbers,
-      totalRooms: numRooms,
-      travelTime: bestScore,
-      totalPrice,
-      checkInDate,
-      checkOutDate,
-      status: 'confirmed'
-    });
+    // Execute booking within a transaction to ensure atomicity
+    const result = await sequelize.transaction(async (t) => {
+      const newBooking = await Booking.create({
+        userId,
+        rooms: roomNumbers,
+        totalRooms: numRooms,
+        travelTime: bestScore,
+        totalPrice,
+        checkInDate,
+        checkOutDate,
+        status: 'confirmed'
+      }, { transaction: t });
 
-    await Room.update({ status: 'booked' }, { where: { roomNumber: roomNumbers } });
+      await Room.update(
+        { status: 'booked' },
+        {
+          where: { roomNumber: roomNumbers },
+          transaction: t
+        }
+      );
+
+      return newBooking;
+    });
 
     res.status(201).json({
       success: true,
       message: 'Booking successful!',
       data: {
-        ...booking.toJSON(),
+        ...result.toJSON(),
         rooms: selectedRooms
       }
     });
 
   } catch (error) {
-    console.error('❌ Booking error:', error);
-    res.status(500).json({ success: false, message: 'Booking failed' });
+    console.error('❌ [Booking Controller] bookRooms Error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Booking failed'
+    });
   }
 };
 
