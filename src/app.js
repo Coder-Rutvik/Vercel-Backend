@@ -23,36 +23,50 @@ const app = express();
 app.set('trust proxy', 1);
 
 // Security middleware
-app.use(helmet());
+// Security middleware - Simplified for Vercel
+// app.use(helmet()); // Helmet can conflict with Vercel headers
 app.use(compression());
 
-// CORS configuration
-app.use(cors({
+// CORS configuration - ROBUST SETUP
+const corsOptions = {
   origin: '*', // Allow all origins explicitly
-  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept']
-}));
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept', 'X-Requested-With'],
+  credentials: true,
+  optionsSuccessStatus: 200 // some legacy browsers (IE11, various SmartTVs) choke on 204
+};
 
-// Rate limiting - FIXED for Render
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // Enable pre-flight for all routes
+
+// Fallback: Hand-crafted headers just in case
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  next();
+});
+
+// Rate limiting - Commented out for Vercel serverless (stateless)
+/*
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // 100 requests per window
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => {
-    // Skip rate limiting for health checks
     return req.path === '/api/health';
   }
 });
-
 app.use('/api/', limiter);
+*/
 
 // Request logging
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 } else {
-  app.use(morgan('combined'));
+  // Use 'tiny' for production to reduce log volume
+  app.use(morgan('tiny'));
 }
 
 // Custom logger middleware (Postgres-only setup)
