@@ -112,11 +112,50 @@ const ensureUsersTable = async () => {
   }
 };
 
+// Function to seed initial rooms
+const seedRooms = async () => {
+  try {
+    const [roomsCount] = await sequelize.query('SELECT COUNT(*) FROM rooms');
+    if (parseInt(roomsCount[0].count) > 0) {
+      console.log('✅ Rooms already seeded');
+      return;
+    }
+
+    console.log('🌱 Seeding initial rooms...');
+    let rooms = [];
+
+    // Floors 1-9: 10 rooms each
+    for (let floor = 1; floor <= 9; floor++) {
+      for (let pos = 1; pos <= 10; pos++) {
+        rooms.push(`(${floor * 100 + pos}, ${floor}, ${pos})`);
+      }
+    }
+
+    // Floor 10: 7 rooms
+    for (let pos = 1; pos <= 7; pos++) {
+      rooms.push(`(100${pos}, 10, ${pos})`);
+    }
+
+    const values = rooms.join(', ');
+    await sequelize.query(`
+      INSERT INTO rooms (room_number, floor, position) 
+      VALUES ${values}
+      ON CONFLICT (room_number) DO NOTHING;
+    `);
+
+    console.log('✅ 97 rooms seeded successfully');
+  } catch (error) {
+    console.error('❌ Room seeding failed:', error.message);
+  }
+};
+
 // Function to create all tables if missing
 const setupDatabaseTables = async () => {
   try {
     console.log('🛠️ Setting up database tables...');
     await ensureUsersTable();
+
+    let roomsCreated = false;
     try {
       await sequelize.query('SELECT 1 FROM rooms LIMIT 1');
       console.log('✅ Rooms table exists');
@@ -137,8 +176,13 @@ const setupDatabaseTables = async () => {
           )
         `);
         console.log('✅ Rooms table created');
+        roomsCreated = true;
       }
     }
+
+    // Always check/seed rooms if table is empty
+    await seedRooms();
+
     try {
       await sequelize.query('SELECT 1 FROM bookings LIMIT 1');
       console.log('✅ Bookings table exists');
