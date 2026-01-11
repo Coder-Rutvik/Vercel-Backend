@@ -86,7 +86,7 @@ const getAllBookings = async (req, res) => {
 const updateRoom = async (req, res) => {
   try {
     const { id } = req.params;
-    const { roomType, basePrice, isAvailable } = req.body;
+    const { roomType, basePrice, status } = req.body;
 
     const room = await Room.findByPk(id);
 
@@ -101,7 +101,7 @@ const updateRoom = async (req, res) => {
     const oldValues = {
       roomType: room.roomType,
       basePrice: room.basePrice,
-      isAvailable: room.isAvailable
+      status: room.status
     };
 
     if (roomType) room.roomType = roomType;
