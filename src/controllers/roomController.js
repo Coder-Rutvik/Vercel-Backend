@@ -1,11 +1,15 @@
 const { Room, Booking } = require('../models');
 const { Sequelize, Op } = require('sequelize');
+const seedRooms = require('../utils/roomSeeder');
 
 // @desc    Get all rooms
 // @route   GET /api/rooms
 // @access  Public
 const getAllRooms = async (req, res) => {
   try {
+    // Check and seed if empty (Auto-Recovery)
+    await seedRooms();
+
     const rooms = await Room.findAll({
       order: [['roomNumber', 'ASC']]
     });
@@ -228,7 +232,6 @@ const generateRandomOccupancy = async (req, res) => {
   }
 };
 
-
 // @desc    Reset all bookings and make all rooms available
 // @route   POST /api/rooms/reset-all
 // @access  Private
@@ -242,44 +245,15 @@ const resetAllBookings = async (req, res) => {
     await Room.destroy({ where: {} });
     console.log('✅ All rooms deleted');
 
-    // Recreate 97 rooms
-    const roomsToCreate = [];
-
-    // Floors 1-9: 10 rooms each (101-110, 201-210, ..., 901-910)
-    for (let floor = 1; floor <= 9; floor++) {
-      for (let position = 1; position <= 10; position++) {
-        roomsToCreate.push({
-          roomNumber: floor * 100 + position,
-          floor: floor,
-          position: position,
-          roomType: 'standard',
-          status: 'not-booked',
-          basePrice: 100.00
-        });
-      }
-    }
-
-    // Floor 10: 7 rooms only (1001-1007)
-    for (let position = 1; position <= 7; position++) {
-      roomsToCreate.push({
-        roomNumber: 1000 + position,
-        floor: 10,
-        position: position,
-        roomType: 'standard',
-        status: 'not-booked',
-        basePrice: 100.00
-      });
-    }
-
-    await Room.bulkCreate(roomsToCreate);
-    console.log(`✅ ${roomsToCreate.length} rooms recreated`);
+    // Recreate 97 rooms using the helper
+    const createdCount = await seedRooms();
 
     res.json({
       success: true,
-      message: `Reset complete! ${roomsToCreate.length} rooms recreated (101-110, 201-210...901-910, 1001-1007)`,
+      message: `Reset complete! ${createdCount || 97} rooms recreated (101-110...1001-1007)`,
       data: {
-        totalRooms: roomsToCreate.length,
-        availableRooms: roomsToCreate.length
+        totalRooms: createdCount || 97,
+        availableRooms: createdCount || 97
       }
     });
   } catch (error) {
