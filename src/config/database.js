@@ -121,29 +121,31 @@ const seedRooms = async () => {
       return;
     }
 
-    console.log('🌱 Seeding initial rooms...');
+    console.log('🌱 Seeding initial rooms (101-110 pattern)...');
     let rooms = [];
 
-    // Floors 1-9: 10 rooms each
+    // Floors 1-9: 10 rooms each (e.g., 101-110)
     for (let floor = 1; floor <= 9; floor++) {
       for (let pos = 1; pos <= 10; pos++) {
-        rooms.push(`(${floor * 100 + pos}, ${floor}, ${pos})`);
+        const roomNum = floor * 100 + pos;
+        rooms.push(`(${roomNum}, ${floor}, ${pos}, 'standard', 'not-booked', 100.00)`);
       }
     }
 
-    // Floor 10: 7 rooms
+    // Floor 10: 7 rooms (1001-1007)
     for (let pos = 1; pos <= 7; pos++) {
-      rooms.push(`(100${pos}, 10, ${pos})`);
+      const roomNum = 1000 + pos;
+      rooms.push(`(${roomNum}, 10, ${pos}, 'standard', 'not-booked', 100.00)`);
     }
 
     const values = rooms.join(', ');
     await sequelize.query(`
-      INSERT INTO rooms (room_number, floor, position) 
+      INSERT INTO rooms (room_number, floor, position, room_type, status, base_price) 
       VALUES ${values}
       ON CONFLICT (room_number) DO NOTHING;
     `);
 
-    console.log('✅ 97 rooms seeded successfully');
+    console.log('✅ 97 rooms seeded successfully (101-110 pattern)');
   } catch (error) {
     console.error('❌ Room seeding failed:', error.message);
   }
