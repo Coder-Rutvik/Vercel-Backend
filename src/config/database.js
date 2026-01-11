@@ -52,14 +52,35 @@ const connect = async () => {
     console.log('✅ DB Connected');
 
     // Import all models to ensure they're registered
-    require('../models/User');
-    require('../models/Room');
-    require('../models/Booking');
+    const User = require('../models/User');
+    const Room = require('../models/Room');
+    const Booking = require('../models/Booking');
 
     // Sync all models (creates tables if they don't exist)
     // alter: false means it won't modify existing tables
     await sequelize.sync({ alter: false });
     console.log('✅ All models synced');
+
+    // Seed rooms if table is empty
+    const roomCount = await Room.count();
+    if (roomCount === 0) {
+      console.log('🌱 Seeding rooms...');
+      const roomsToCreate = [];
+      for (let floor = 1; floor <= 1; floor++) {
+        for (let position = 1; position <= 10; position++) {
+          roomsToCreate.push({
+            roomNumber: 100 + position,
+            floor: floor,
+            position: position,
+            roomType: 'standard',
+            status: 'not-booked',
+            basePrice: 100.00
+          });
+        }
+      }
+      await Room.bulkCreate(roomsToCreate);
+      console.log('✅ Rooms seeded (101-110)');
+    }
 
     return true;
   } catch (error) {
