@@ -31,7 +31,7 @@ const UserPostgres = sequelize.define('User', {
     allowNull: true
   },
   role: {
-    type: DataTypes.ENUM('user', 'admin'),
+    type: DataTypes.STRING(10),
     defaultValue: 'user'
   },
   isActive: {

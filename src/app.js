@@ -11,7 +11,6 @@ const adminRoutes = require('./routes/adminRoutes');
 
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
-const loggerMiddleware = require('./middleware/logger');
 
 // DB connections (Postgres-only)
 const dbConnections = require('./config/database');
@@ -33,13 +32,19 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
-// 3. Fallback Headers for CORS
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
+// 3. DB Initialization Middleware (Runs once)
+let isDbInitialized = false;
+app.use(async (req, res, next) => {
+  if (!isDbInitialized && req.path !== '/api/health') {
+    try {
+      console.log('🔄 First request detected. Initializing database...');
+      const { connect } = require('./config/database');
+      await connect();
+      isDbInitialized = true;
+      console.log('✅ Database ready');
+    } catch (err) {
+      console.error('❌ Database boot failed:', err.message);
+    }
   }
   next();
 });
@@ -55,7 +60,6 @@ if (process.env.NODE_ENV === 'development') {
 } else {
   app.use(morgan('tiny'));
 }
-app.use(loggerMiddleware);
 
 // ✅ ROOT ENDPOINT
 app.get('/', (req, res) => {
