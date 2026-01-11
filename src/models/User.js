@@ -1,13 +1,13 @@
 // src/models/User.js - FIXED PATH
-const { sequelize } = require('../config/database');  
+const { sequelize } = require('../config/database');
 const { DataTypes } = require('sequelize');
 const bcrypt = require('bcryptjs');
 
 const UserPostgres = sequelize.define('User', {
   userId: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
     primaryKey: true,
-    autoIncrement: true,
     field: 'user_id'
   },
   name: {

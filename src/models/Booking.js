@@ -10,7 +10,7 @@ const BookingPostgres = sequelize.define('Booking', {
     field: 'booking_id'
   },
   userId: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.UUID,
     allowNull: false,
     field: 'user_id'
   },

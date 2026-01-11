@@ -88,7 +88,7 @@ const ensureUsersTable = async () => {
         console.log('📝 Users table not found. Creating...');
         const createTableSQL = `
           CREATE TABLE users (
-            user_id SERIAL PRIMARY KEY,
+            user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             name VARCHAR(100) NOT NULL,
             email VARCHAR(100) UNIQUE NOT NULL,
             password VARCHAR(255) NOT NULL,
@@ -170,7 +170,7 @@ const setupDatabaseTables = async () => {
         console.log('📝 Creating rooms table...');
         await sequelize.query(`
           CREATE TABLE rooms (
-            room_id SERIAL PRIMARY KEY,
+            room_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
             room_number INTEGER UNIQUE NOT NULL,
             floor INTEGER NOT NULL,
             position INTEGER NOT NULL,
@@ -198,7 +198,7 @@ const setupDatabaseTables = async () => {
         await sequelize.query(`
           CREATE TABLE bookings (
             booking_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id INTEGER NOT NULL,
+            user_id UUID NOT NULL,
             rooms JSONB NOT NULL,
             total_rooms INTEGER NOT NULL,
             travel_time INTEGER NOT NULL,

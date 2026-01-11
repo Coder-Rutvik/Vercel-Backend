@@ -3,9 +3,9 @@ const { sequelize } = require('../config/database');
 
 const Room = sequelize.define('Room', {
   roomId: {
-    type: DataTypes.INTEGER,
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
     primaryKey: true,
-    autoIncrement: true,
     field: 'room_id'
   },
   roomNumber: {
