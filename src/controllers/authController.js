@@ -261,6 +261,5 @@ module.exports = {
   login,
   getMe,
   updateProfile,
-  changePassword,
-  ensureUsersTable
+  changePassword
 };

@@ -4,7 +4,6 @@ require('dotenv').config();
 
 const getSequelize = () => {
   if (!process.env.DATABASE_URL) {
-    console.warn('⚠️ DATABASE_URL not found, using local fallback...');
     return new Sequelize('postgres://postgres:postgres@localhost:5432/hotel_db', {
       dialect: 'postgres',
       dialectModule: pg,
@@ -28,11 +27,34 @@ const getSequelize = () => {
 
 const sequelize = getSequelize();
 
+const checkConnection = async () => {
+  try {
+    await sequelize.authenticate();
+    return { connected: true };
+  } catch (error) {
+    return { connected: false, error: error.message };
+  }
+};
+
+const checkAllConnections = async () => {
+  const status = await checkConnection();
+  return {
+    postgresql: {
+      connected: status.connected,
+      error: status.error
+    }
+  };
+};
+
 const connect = async () => {
   try {
     await sequelize.authenticate();
     console.log('✅ DB Connected');
-    // Simple table check/creation can go here if needed
+
+    // Minimal Sync (Creates tables if they don't exist based on models)
+    // In production/Vercel, we use alter: false for safety
+    await sequelize.sync({ alter: false });
+
     return true;
   } catch (error) {
     console.error('❌ DB Connection Error:', error.message);
@@ -40,4 +62,9 @@ const connect = async () => {
   }
 };
 
-module.exports = { sequelize, connect };
+module.exports = {
+  sequelize,
+  connect,
+  checkConnection,
+  checkAllConnections
+};
