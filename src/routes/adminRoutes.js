@@ -4,8 +4,6 @@ const { protect, authorize } = require('../middleware/auth');
 const {
   getAllUsers,
   getAllBookings,
-  getSystemLogs,
-  getAuditTrail,
   updateRoom,
   getDashboardStats
 } = require('../controllers/adminController');

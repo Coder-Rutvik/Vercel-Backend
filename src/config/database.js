@@ -156,12 +156,16 @@ const setupDatabaseTables = async () => {
   try {
     console.log('🛠️ Setting up database tables...');
 
-    // Enable UUID extension for Postgres
-    await sequelize.query('CREATE EXTENSION IF NOT EXISTS "pgcrypto";');
+    // Enable UUID extension (Safe check)
+    try {
+      await sequelize.query('CREATE EXTENSION IF NOT EXISTS "pgcrypto";');
+    } catch (e) {
+      console.warn('⚠️ Could not create pgcrypto extension (might already exist or permission denied):', e.message);
+    }
 
     await ensureUsersTable();
 
-    let roomsCreated = false;
+    // Check/Create Rooms table
     try {
       await sequelize.query('SELECT 1 FROM rooms LIMIT 1');
       console.log('✅ Rooms table exists');
@@ -182,13 +186,13 @@ const setupDatabaseTables = async () => {
           )
         `);
         console.log('✅ Rooms table created');
-        roomsCreated = true;
       }
     }
 
-    // Always check/seed rooms if table is empty
+    // Always check/seed rooms
     await seedRooms();
 
+    // Check/Create Bookings table
     try {
       await sequelize.query('SELECT 1 FROM bookings LIMIT 1');
       console.log('✅ Bookings table exists');
