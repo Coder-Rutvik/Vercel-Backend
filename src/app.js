@@ -32,20 +32,17 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
-// 3. DB Initialization Middleware (Runs once)
-let isDbInitialized = false;
-app.use(async (req, res, next) => {
-  if (!isDbInitialized && req.path !== '/api/health') {
-    try {
-      console.log('🔄 First request detected. Initializing database...');
-      const { connect } = require('./config/database');
-      await connect();
-      isDbInitialized = true;
-      console.log('✅ Database ready');
-    } catch (err) {
-      console.error('❌ Database boot failed:', err.message);
-    }
-  }
+// 3. Root Route (For quick health check)
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: '🏨 Hotel Reservation System API (Vercel Ready)',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// 4. DB Check Middleware (Optional but safe)
+app.use((req, res, next) => {
   next();
 });
 
