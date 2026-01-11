@@ -237,23 +237,25 @@ const generateRandomOccupancy = async (req, res) => {
 // @access  Private
 const resetAllBookings = async (req, res) => {
   try {
-    // Delete ALL bookings
+    // 1. Clear all bookings
     await Booking.destroy({ where: {} });
-    console.log('✅ All bookings deleted');
+    console.log('✅ All bookings cleared');
 
-    // Delete ALL rooms
-    await Room.destroy({ where: {} });
-    console.log('✅ All rooms deleted');
+    // 2. Reset all rooms to 'not-booked'
+    await Room.update(
+      { status: 'not-booked' },
+      { where: {} }
+    );
+    console.log('✅ All rooms reset to available');
 
-    // Recreate 97 rooms using the helper
-    const createdCount = await seedRooms();
+    const totalRooms = await Room.count();
 
     res.json({
       success: true,
-      message: `Reset complete! ${createdCount || 97} rooms recreated (101-110...1001-1007)`,
+      message: 'Reset complete! Bookings cleared and rooms are now available.',
       data: {
-        totalRooms: createdCount || 97,
-        availableRooms: createdCount || 97
+        totalRooms,
+        availableRooms: totalRooms
       }
     });
   } catch (error) {
