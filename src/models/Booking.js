@@ -50,12 +50,12 @@ const BookingPostgres = sequelize.define('Booking', {
     field: 'check_out_date'
   },
   status: {
-    type: DataTypes.ENUM('pending', 'confirmed', 'cancelled', 'completed'),
+    type: DataTypes.STRING(20),
     defaultValue: 'confirmed',
     allowNull: false
   },
   paymentStatus: {
-    type: DataTypes.ENUM('pending', 'paid', 'refunded'),
+    type: DataTypes.STRING(20),
     defaultValue: 'pending',
     field: 'payment_status'
   },
