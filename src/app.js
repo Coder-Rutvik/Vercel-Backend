@@ -70,7 +70,8 @@ app.get('/', (req, res) => {
 // Health check endpoint
 app.get('/api/health', async (req, res) => {
   try {
-    const dbStatus = await dbConnections.checkAllConnections();
+    const { checkAllConnections } = require('./config/database');
+    const dbStatus = await checkAllConnections();
     res.status(200).json({
       status: 'ok',
       timestamp: new Date().toISOString(),
