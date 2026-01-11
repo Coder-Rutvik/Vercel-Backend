@@ -126,6 +126,8 @@ const bookRooms = async (req, res) => {
     const roomNumbers = selectedRooms.map(room => room.roomNumber);
     const totalPrice = parseFloat((numRooms * selectedRooms[0].basePrice * nights).toFixed(2));
 
+    console.log(`📡 Attempting to book rooms: ${roomNumbers.join(', ')} for user ${userId}`);
+
     // Execute booking within a transaction to ensure atomicity
     const result = await sequelize.transaction(async (t) => {
       const newBooking = await Booking.create({
@@ -139,13 +141,21 @@ const bookRooms = async (req, res) => {
         status: 'confirmed'
       }, { transaction: t });
 
-      await Room.update(
+      console.log(`✅ Booking record created: ${newBooking.bookingId}`);
+
+      const [updatedCount] = await Room.update(
         { status: 'booked' },
         {
-          where: { roomNumber: roomNumbers },
+          where: { roomNumber: { [Op.in]: roomNumbers } },
           transaction: t
         }
       );
+
+      console.log(`🛌 Updated ${updatedCount} rooms to "booked" status`);
+
+      if (updatedCount !== roomNumbers.length) {
+        throw new Error(`Failed to update all rooms. Expected ${roomNumbers.length}, but updated ${updatedCount}.`);
+      }
 
       return newBooking;
     });
