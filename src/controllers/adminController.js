@@ -13,10 +13,6 @@ const Room = db.Room;
 // @access  Private/Admin
 const getAllUsers = async (req, res) => {
   try {
-    // ✅ FIRST: Ensure users table exists
-    const { ensureUsersTable } = require('./authController');
-    await ensureUsersTable();
-    
     const users = await User.findAll({
       attributes: { exclude: ['password'] }
     });
@@ -28,7 +24,7 @@ const getAllUsers = async (req, res) => {
     });
   } catch (error) {
     console.error('Get users error:', error);
-    
+
     // If users table doesn't exist
     if (error.message.includes('relation "users" does not exist') || error.code === '42P01') {
       return res.status(500).json({
@@ -37,7 +33,7 @@ const getAllUsers = async (req, res) => {
         error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
-    
+
     res.status(500).json({
       success: false,
       message: 'Server error',
@@ -91,29 +87,29 @@ const updateRoom = async (req, res) => {
   try {
     const { id } = req.params;
     const { roomType, basePrice, isAvailable } = req.body;
-    
+
     const room = await Room.findByPk(id);
-    
+
     if (!room) {
       return res.status(404).json({
         success: false,
         message: 'Room not found'
       });
     }
-    
+
     // Save old values before updating
     const oldValues = {
       roomType: room.roomType,
       basePrice: room.basePrice,
       isAvailable: room.isAvailable
     };
-    
+
     if (roomType) room.roomType = roomType;
     if (basePrice) room.basePrice = basePrice;
-    if (isAvailable !== undefined) room.isAvailable = isAvailable;
-    
+    if (status) room.status = status;
+
     await room.save();
-    
+
     // Audit: logged to console
     try {
       console.log('AUDIT: Room Update', {
@@ -124,7 +120,7 @@ const updateRoom = async (req, res) => {
         newValue: {
           roomType: room.roomType,
           basePrice: room.basePrice,
-          isAvailable: room.isAvailable
+          status: room.status
         },
         changedBy: req.user.email,
         changedById: req.user.userId.toString(),
@@ -133,7 +129,7 @@ const updateRoom = async (req, res) => {
     } catch (err) {
       console.error('Audit log error:', err);
     }
-    
+
     res.json({
       success: true,
       message: 'Room updated successfully',
@@ -157,30 +153,30 @@ const getDashboardStats = async (req, res) => {
     // Check database connections
     const dbConnections = require('../config/database');
     const dbStatus = await dbConnections.checkConnection();
-    
+
     // Get total rooms
     const totalRooms = await Room.count();
-    const availableRooms = await Room.count({ where: { isAvailable: true } });
-    
+    const availableRooms = await Room.count({ where: { status: 'not-booked' } });
+
     // Get total bookings
     const totalBookings = await Booking.count();
     const confirmedBookings = await Booking.count({ where: { status: 'confirmed' } });
     const cancelledBookings = await Booking.count({ where: { status: 'cancelled' } });
-    
+
     // Get total users
     const totalUsers = await User.count();
     const adminUsers = await User.count({ where: { role: 'admin' } });
-    
+
     // Get revenue stats
     const revenueResult = await Booking.sum('totalPrice', {
       where: { status: 'confirmed', paymentStatus: 'paid' }
     });
     const totalRevenue = revenueResult || 0;
-    
+
     // Get today's stats
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     const todaysBookings = await Booking.count({
       where: {
         createdAt: {
@@ -188,7 +184,7 @@ const getDashboardStats = async (req, res) => {
         }
       }
     });
-    
+
     res.json({
       success: true,
       data: {
@@ -220,7 +216,7 @@ const getDashboardStats = async (req, res) => {
     });
   } catch (error) {
     console.error('Get stats error:', error);
-    
+
     // If tables don't exist
     if (error.message.includes('does not exist') || error.code === '42P01') {
       return res.json({
@@ -235,7 +231,7 @@ const getDashboardStats = async (req, res) => {
         message: 'Database tables not initialized yet'
       });
     }
-    
+
     res.status(500).json({
       success: false,
       message: 'Server error',
