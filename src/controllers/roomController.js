@@ -228,29 +228,58 @@ const generateRandomOccupancy = async (req, res) => {
   }
 };
 
+
 // @desc    Reset all bookings and make all rooms available
 // @route   POST /api/rooms/reset-all
 // @access  Private
 const resetAllBookings = async (req, res) => {
   try {
-    await Booking.update(
-      { status: 'cancelled' },
-      { where: { status: 'confirmed' } }
-    );
+    // Delete ALL bookings
+    await Booking.destroy({ where: {} });
+    console.log('✅ All bookings deleted');
 
-    await Room.update(
-      { status: 'not-booked' },
-      { where: {} }
-    );
+    // Delete ALL rooms
+    await Room.destroy({ where: {} });
+    console.log('✅ All rooms deleted');
 
-    const totalRooms = await Room.count();
+    // Recreate 97 rooms
+    const roomsToCreate = [];
+
+    // Floors 1-9: 10 rooms each (101-110, 201-210, ..., 901-910)
+    for (let floor = 1; floor <= 9; floor++) {
+      for (let position = 1; position <= 10; position++) {
+        roomsToCreate.push({
+          roomNumber: floor * 100 + position,
+          floor: floor,
+          position: position,
+          roomType: 'standard',
+          status: 'not-booked',
+          basePrice: 100.00
+        });
+      }
+    }
+
+    // Floor 10: 7 rooms only (1001-1007)
+    for (let position = 1; position <= 7; position++) {
+      roomsToCreate.push({
+        roomNumber: 1000 + position,
+        floor: 10,
+        position: position,
+        roomType: 'standard',
+        status: 'not-booked',
+        basePrice: 100.00
+      });
+    }
+
+    await Room.bulkCreate(roomsToCreate);
+    console.log(`✅ ${roomsToCreate.length} rooms recreated`);
 
     res.json({
       success: true,
-      message: 'All bookings reset and rooms made available',
+      message: `Reset complete! ${roomsToCreate.length} rooms recreated (101-110, 201-210...901-910, 1001-1007)`,
       data: {
-        totalRooms,
-        availableRooms: totalRooms
+        totalRooms: roomsToCreate.length,
+        availableRooms: roomsToCreate.length
       }
     });
   } catch (error) {
