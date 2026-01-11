@@ -41,8 +41,20 @@ app.get('/', (req, res) => {
   });
 });
 
-// 4. DB Check Middleware (Optional but safe)
-app.use((req, res, next) => {
+// 4. DB Initialization Middleware (Lazy - runs on first request)
+let dbInitialized = false;
+app.use(async (req, res, next) => {
+  if (!dbInitialized && req.path.startsWith('/api/')) {
+    try {
+      console.log('🔄 Initializing database...');
+      const { connect } = require('./config/database');
+      await connect();
+      dbInitialized = true;
+      console.log('✅ Database initialized');
+    } catch (error) {
+      console.error('❌ DB init failed:', error);
+    }
+  }
   next();
 });
 

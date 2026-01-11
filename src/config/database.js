@@ -51,9 +51,15 @@ const connect = async () => {
     await sequelize.authenticate();
     console.log('✅ DB Connected');
 
-    // Minimal Sync (Creates tables if they don't exist based on models)
-    // In production/Vercel, we use alter: false for safety
+    // Import all models to ensure they're registered
+    require('../models/User');
+    require('../models/Room');
+    require('../models/Booking');
+
+    // Sync all models (creates tables if they don't exist)
+    // alter: false means it won't modify existing tables
     await sequelize.sync({ alter: false });
+    console.log('✅ All models synced');
 
     return true;
   } catch (error) {
