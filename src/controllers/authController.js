@@ -57,8 +57,6 @@ const register = async (req, res) => {
     });
   } catch (error) {
     console.error('Register error:', error);
-    const fs = require('fs');
-    fs.appendFileSync('error.log', `${new Date().toISOString()} - Register Error: ${error.stack}\n`);
 
     // Specific error messages
     let errorMessage = 'Server error';
@@ -128,9 +126,6 @@ const login = async (req, res) => {
     });
   } catch (error) {
     console.error('Login error:', error);
-    const fs = require('fs');
-    fs.appendFileSync('error.log', `${new Date().toISOString()} - Login Error: ${error.stack}\n`);
-
     res.status(500).json({
       success: false,
       message: 'Server error',
