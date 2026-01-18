@@ -3,19 +3,16 @@ const { Sequelize } = require('sequelize');
 require('dotenv').config();
 
 const getSequelize = () => {
-  if (!process.env.DATABASE_URL) {
-    return new Sequelize('postgres://postgres:postgres@localhost:5432/hotel_db', {
-      dialect: 'postgres',
-      dialectModule: pg,
-      logging: false
-    });
-  }
+  const dbUrl = process.env.DATABASE_URL ||
+    `postgres://${process.env.POSTGRES_USER || 'postgres'}:${process.env.POSTGRES_PASSWORD || 'postgres'}@${process.env.POSTGRES_HOST || 'localhost'}:${process.env.POSTGRES_PORT || 5432}/${process.env.POSTGRES_DATABASE || 'hotel_db'}`;
 
-  return new Sequelize(process.env.DATABASE_URL, {
+  console.log('🔌 Connecting to DB:', dbUrl.replace(/:([^:@]+)@/, ':****@')); // Log masked URL
+
+  return new Sequelize(dbUrl, {
     dialect: 'postgres',
     dialectModule: pg,
     logging: false,
-    dialectOptions: {
+    dialectOptions: (dbUrl.includes('localhost') || dbUrl.includes('127.0.0.1')) ? {} : {
       ssl: {
         require: true,
         rejectUnauthorized: false
@@ -58,7 +55,8 @@ const connect = async () => {
 
     // Sync all models (creates tables if they don't exist)
     // alter: false means it won't modify existing tables
-    await sequelize.sync({ alter: false });
+    // Sync all models (creates tables if they don't exist, altars if they do)
+    await sequelize.sync({ alter: true });
     console.log('✅ All models synced');
 
     // Seed rooms if table is empty

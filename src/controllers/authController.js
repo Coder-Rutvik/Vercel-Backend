@@ -57,6 +57,8 @@ const register = async (req, res) => {
     });
   } catch (error) {
     console.error('Register error:', error);
+    const fs = require('fs');
+    fs.appendFileSync('error.log', `${new Date().toISOString()} - Register Error: ${error.stack}\n`);
 
     // Specific error messages
     let errorMessage = 'Server error';
@@ -69,7 +71,7 @@ const register = async (req, res) => {
     res.status(500).json({
       success: false,
       message: errorMessage,
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: error.message // Always output error message for now to debug
     });
   }
 };
@@ -126,10 +128,13 @@ const login = async (req, res) => {
     });
   } catch (error) {
     console.error('Login error:', error);
+    const fs = require('fs');
+    fs.appendFileSync('error.log', `${new Date().toISOString()} - Login Error: ${error.stack}\n`);
+
     res.status(500).json({
       success: false,
       message: 'Server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: error.message // Always expose for debug
     });
   }
 };
