@@ -36,7 +36,7 @@ const calculateTotalPathCost = (rooms) => {
 // @access  Private
 const bookRooms = async (req, res) => {
   try {
-    const { numRooms, checkInDate, checkOutDate } = req.body;
+    const { numRooms, checkInDate, checkOutDate, roomType } = req.body;
     const userId = req.user.userId;
 
     if (!numRooms || numRooms < 1 || numRooms > 5) {
@@ -48,8 +48,13 @@ const bookRooms = async (req, res) => {
     const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24)) || 1;
 
     // 1. Get all available rooms
+    const whereClause = { status: 'not-booked' };
+    if (roomType && roomType !== 'Any') {
+      whereClause.roomType = roomType;
+    }
+
     const availableRooms = await Room.findAll({
-      where: { status: 'not-booked' },
+      where: whereClause,
       order: [['floor', 'ASC'], ['position', 'ASC']]
     });
 
@@ -124,7 +129,13 @@ const bookRooms = async (req, res) => {
     }
 
     const roomNumbers = selectedRooms.map(room => room.roomNumber);
-    const totalPrice = parseFloat((numRooms * selectedRooms[0].basePrice * nights).toFixed(2));
+
+    // Calculate total price based on individual room prices
+    let basePriceSum = 0;
+    selectedRooms.forEach(r => {
+      basePriceSum += parseFloat(r.basePrice);
+    });
+    const totalPrice = parseFloat((basePriceSum * nights).toFixed(2));
 
     console.log(`📡 Attempting to book rooms: ${roomNumbers.join(', ')} for user ${userId}`);
 
