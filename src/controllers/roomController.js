@@ -301,12 +301,19 @@ const generateRandomOccupancy = async (req, res) => {
 // @access  Private
 const resetAllBookings = async (req, res) => {
   try {
-    const { sequelize } = require('../config/database');
-    console.log('🔄 [GLOBAL RESET] Wiping and recreating all Database schemas...');
+    const { Booking, Room, Order, Bill } = require('../models');
+    console.log('🔄 [APP RESET] Clearing bookings, orders, and bills...');
     
-    // Drop all tables and strictly recreate them with perfect Sequences and Foreign Keys
-    await sequelize.sync({ force: true });
-    console.log('✅ [GLOBAL RESET] All tables successfully forcefully recreated!');
+    // Clear operational records ONLY, preserving Users and Schema
+    await Order.destroy({ where: {} });
+    await Bill.destroy({ where: {} });
+    await Booking.destroy({ where: {} });
+    
+    await Room.update(
+      { status: 'not-booked' },
+      { where: {} }
+    );
+    console.log('✅ [APP RESET] All rooms reset to available!');
 
     // Reseed the rooms cleanly
     const seedRooms = require('../utils/roomSeeder');
