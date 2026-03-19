@@ -4,8 +4,6 @@ const compression = require('compression');
 const morgan = require('morgan');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const fs = require('fs');
-const path = require('path');
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');
@@ -34,9 +32,6 @@ const limiter = rateLimit({
 });
 // Apply basic rate limiting to all /api/ routes
 app.use('/api/', limiter);
-
-// Create Production Logging Stream
-const accessLogStream = fs.createWriteStream(path.join(__dirname, '../logs', 'access.log'), { flags: 'a' });
 
 // 1. TRUST PROXY
 app.set('trust proxy', 1);
@@ -88,9 +83,8 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 } else {
-  app.use(morgan('combined', { stream: accessLogStream }));
-  // Keep regular tiny output on console too
-  app.use(morgan('tiny'));
+  // Use combined format for Vercel console logs (no explicit file stream)
+  app.use(morgan('combined'));
 }
 
 // ✅ ROOT ENDPOINT
