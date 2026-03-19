@@ -137,6 +137,24 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
+// ONE-TIME FORCE SYNC ENDPOINT TO FIX CORRUPTED NEON SCHEMA
+app.get('/api/health/force-reset-corrupted-schema', async (req, res) => {
+  try {
+    const { sequelize } = require('./config/database');
+    await sequelize.sync({ force: true });
+    
+    const seedRooms = require('./utils/roomSeeder');
+    await seedRooms();
+
+    res.json({
+      success: true,
+      message: '✅ ENTIRE NEON DB SCHEMA DROPPED AND PERFECTLY RECREATED WITH SEQUENCES!'
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/bookings', bookingRoutes);
