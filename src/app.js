@@ -59,18 +59,30 @@ app.get('/', (req, res) => {
 
 // 4. DB Initialization Middleware (Lazy - runs on first request)
 let dbInitialized = false;
+let lastDbError = null;
 app.use(async (req, res, next) => {
   if (!dbInitialized && req.path.startsWith('/api/')) {
     try {
       console.log('🔄 Initializing database...');
       const { connect } = require('./config/database');
-      await connect();
-      dbInitialized = true;
-      console.log('✅ Database initialized');
+      const result = await connect();
+      if (result === true) {
+        dbInitialized = true;
+        lastDbError = null;
+        console.log('✅ Database initialized');
+      } else {
+        lastDbError = result; // Stores the error string from catch block
+      }
     } catch (error) {
       console.error('❌ DB init failed:', error);
+      lastDbError = error.message;
     }
   }
+  
+  if (!dbInitialized && lastDbError && req.path.startsWith('/api/')) {
+    return res.status(500).json({ success: false, message: `Database initialization failed: ${lastDbError}` });
+  }
+
   next();
 });
 
@@ -99,17 +111,29 @@ app.get('/', (req, res) => {
 // Health check endpoint
 app.get('/api/health', async (req, res) => {
   try {
-    const { checkAllConnections } = require('./config/database');
+    const { connect, checkAllConnections } = require('./config/database');
     const dbStatus = await checkAllConnections();
+    
+    // Explicitly try to connect and capture EXACT error
+    let connectError = null;
+    let connectResult = false;
+    try {
+      connectResult = await connect();
+    } catch (e) {
+      connectError = e.message || String(e);
+    }
+
     res.status(200).json({
       status: 'ok',
+      connectResult,
+      connectError,
       timestamp: new Date().toISOString(),
       databases: {
         postgresql: dbStatus.postgresql.connected ? 'connected' : `disconnected (${dbStatus.postgresql.error})`
       }
     });
   } catch (error) {
-    res.status(500).json({ status: 'error', error: error.message });
+    res.status(500).json({ status: 'error', error: error.message, stack: error.stack });
   }
 });
 

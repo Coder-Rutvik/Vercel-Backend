@@ -66,7 +66,7 @@ const connect = async () => {
     return true;
   } catch (error) {
     console.error('❌ DB Connection Error:', error.message);
-    return false;
+    return error.message || String(error);
   }
 };
 
