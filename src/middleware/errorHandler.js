@@ -1,6 +1,12 @@
+const logger = require('../utils/logger');
+
 const errorHandler = (err, req, res, next) => {
+  // Production level logging: write to logs/error.log
+  logger.error(`[ERROR] ${err.message} - ${req.originalUrl} - ${req.method} - ${req.ip} \nStack: ${err.stack}`);
+
   let error = { ...err };
   error.message = err.message;
+  let statusCode = res.statusCode === 200 ? 500 : res.statusCode;
 
   // Log error
   console.error('Error:', err.stack);

@@ -192,17 +192,80 @@ const searchRooms = async (req, res) => {
 // @access  Private
 const generateRandomOccupancy = async (req, res) => {
   try {
+    const { Order, Bill, User } = require('../models');
+
     const allRooms = await Room.findAll();
-    const occupancyRate = 0.3 + Math.random() * 0.3;
+    const occupancyRate = 0.4 + Math.random() * 0.4; // 40-80% load
     const numToBook = Math.floor(allRooms.length * occupancyRate);
     const shuffled = allRooms.sort(() => 0.5 - Math.random());
 
     const bookedRooms = shuffled.slice(0, numToBook);
     const unbookedRooms = shuffled.slice(numToBook);
 
+    // Make sure we have a mock user
+    let user = await User.findOne();
+    if (!user) user = await User.create({ name: 'System Seed', email: 'seed@hotel.com', password: 'seed' });
+
+    // Seed robust data for each booked room
+    const mockMenuItems = [
+      { name: 'Paneer Butter Masala', category: 'Indian', price: 250 },
+      { name: 'Chicken Tikka', category: 'Indian', price: 350 },
+      { name: 'Biryani', category: 'Indian', price: 400 },
+      { name: 'Pizza', category: 'Italian', price: 300 }
+    ];
+
+    let totalOrdersCreated = 0;
+    let totalBillsPaid = 0;
+
     for (const room of bookedRooms) {
       room.status = 'booked';
       await room.save();
+
+      // Create Booking
+      const b = await Booking.create({
+        userId: user.userId,
+        rooms: [room.roomNumber],
+        totalRooms: 1,
+        totalPrice: room.basePrice * 2,
+        checkInDate: new Date(),
+        checkOutDate: new Date(Date.now() + 86400000 * 2),
+        status: 'confirmed'
+      });
+
+      // Random KOT Orders for each mock booking
+      const itemRandom = mockMenuItems[Math.floor(Math.random() * mockMenuItems.length)];
+      const order = await Order.create({
+        bookingId: b.bookingId,
+        tableNumber: null,
+        items: [{ ...itemRandom, quantity: 2 }],
+        totalPrice: itemRandom.price * 2,
+        status: 'delivered', // Mock old orders
+        paymentStatus: 'pending'
+      });
+      totalOrdersCreated++;
+
+      // Create a finalized bill roughly 30% of the time to generate P&L historical data
+      if (Math.random() > 0.7) {
+        const roomTotal = parseFloat(b.totalPrice);
+        const foodTotal = parseFloat(order.totalPrice);
+        const subtotal = roomTotal + foodTotal;
+        const tax = subtotal * 0.18;
+        const grandTotal = subtotal + tax;
+
+        await Bill.create({
+          bookingId: b.bookingId,
+          roomTotal, foodTotal, subtotal, taxAmount: tax, grandTotal,
+          isPaid: true, paymentMode: 'UPI'
+        });
+        
+        b.status = 'completed';
+        room.status = 'not-booked';
+        order.paymentStatus = 'paid';
+        await b.save();
+        await room.save();
+        await order.save();
+        totalBillsPaid++;
+      }
     }
 
     for (const room of unbookedRooms) {
@@ -210,17 +273,16 @@ const generateRandomOccupancy = async (req, res) => {
       await room.save();
     }
 
-    const bookedNumbers = bookedRooms.map(r => r.roomNumber);
+    const actuallyBooked = bookedRooms.length - totalBillsPaid;
 
     res.json({
       success: true,
-      message: `Random occupancy generated: ${numToBook} rooms occupied`,
+      message: `Full Load Simulation: ${bookedRooms.length} rooms checked-in, ${totalOrdersCreated} KOT generated, ${totalBillsPaid} checkouts and bills paid for PNL.`,
       data: {
         totalRooms: allRooms.length,
-        occupiedRooms: numToBook,
-        availableRooms: allRooms.length - numToBook,
-        occupancyRate: (occupancyRate * 100).toFixed(1) + '%',
-        bookedRooms: bookedNumbers
+        occupiedRooms: actuallyBooked,
+        availableRooms: allRooms.length - actuallyBooked,
+        occupancyRate: ((actuallyBooked / allRooms.length) * 100).toFixed(1) + '%',
       }
     });
   } catch (error) {

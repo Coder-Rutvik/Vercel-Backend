@@ -157,7 +157,10 @@ const bookRooms = async (req, res) => {
       const [updatedCount] = await Room.update(
         { status: 'booked' },
         {
-          where: { roomNumber: { [Op.in]: roomNumbers } },
+          where: { 
+            roomNumber: { [Op.in]: roomNumbers },
+            status: 'not-booked' // CONCURRENCY FIX: Protect against Race Condition Double-Booking
+          },
           transaction: t
         }
       );
@@ -165,7 +168,7 @@ const bookRooms = async (req, res) => {
       console.log(`🛌 Updated ${updatedCount} rooms to "booked" status`);
 
       if (updatedCount !== roomNumbers.length) {
-        throw new Error(`Failed to update all rooms. Expected ${roomNumbers.length}, but updated ${updatedCount}.`);
+        throw new Error(`CONCURRENCY RACE DETECTED: Another user just booked one of these rooms. Transaction completely rolled back.`);
       }
 
       return newBooking;

@@ -30,6 +30,18 @@ const UserPostgres = sequelize.define('User', {
     type: DataTypes.STRING(20),
     allowNull: true
   },
+  birthDate: {
+    type: DataTypes.DATEONLY,
+    allowNull: true,
+    field: 'birth_date',
+    comment: 'CRM: Birthday offers'
+  },
+  loyaltyPoints: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    field: 'loyalty_points',
+    comment: 'CRM: Loyalty Program'
+  },
   role: {
     type: DataTypes.STRING(10),
     defaultValue: 'user'

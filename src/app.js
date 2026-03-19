@@ -2,6 +2,10 @@ const express = require('express');
 const cors = require('cors');
 const compression = require('compression');
 const morgan = require('morgan');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const fs = require('fs');
+const path = require('path');
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');
@@ -16,6 +20,23 @@ const errorHandler = require('./middleware/errorHandler');
 const dbConnections = require('./config/database');
 
 const app = express();
+
+// SECURITY 1: Helmet for HTTP headers
+app.use(helmet());
+
+// SECURITY 2: Rate Limiting against Bruteforce / DDoS
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 1000, // Limit each IP to 1000 requests per `window` for demo scale
+  message: { success: false, message: 'Too many requests from this IP, please try again after 15 minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+// Apply basic rate limiting to all /api/ routes
+app.use('/api/', limiter);
+
+// Create Production Logging Stream
+const accessLogStream = fs.createWriteStream(path.join(__dirname, '../logs', 'access.log'), { flags: 'a' });
 
 // 1. TRUST PROXY
 app.set('trust proxy', 1);
@@ -67,6 +88,8 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 } else {
+  app.use(morgan('combined', { stream: accessLogStream }));
+  // Keep regular tiny output on console too
   app.use(morgan('tiny'));
 }
 
@@ -101,6 +124,26 @@ app.use('/api/auth', authRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/admin', adminRoutes);
+
+// NEW RESTAURANT ROUTE
+const restaurantRoutes = require('./routes/restaurantRoutes');
+app.use('/api/restaurant', restaurantRoutes);
+
+// NEW BILLING ROUTE (ROOM + FOOD CHECKOUT)
+const billingRoutes = require('./routes/billingRoutes');
+app.use('/api/billing', billingRoutes);
+
+// NEW ACCOUNTING/PNL ROUTE
+const accountingRoutes = require('./routes/accountingRoutes');
+app.use('/api/accounting', accountingRoutes);
+
+// NEW INVENTORY & AUDIT LOG ROUTE
+const inventoryRoutes = require('./routes/inventoryRoutes');
+app.use('/api/inventory', inventoryRoutes);
+
+// PHASE 3 PRO FEATURES
+const proRoutes = require('./routes/proRoutes');
+app.use('/api/pro', proRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {

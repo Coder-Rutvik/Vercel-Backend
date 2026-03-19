@@ -1,59 +1,64 @@
 const Room = require('../models/Room');
+const Booking = require('../models/Booking');
 
-const seedRooms = async () => {
+const seedRooms = async (numRooms = 150) => {
     try {
         const roomCount = await Room.count();
-        if (roomCount === 0) {
-            console.log('🌱 Auto-Seeding 97 rooms...');
+        if (roomCount < numRooms) {
+            console.log(`🌱 [SaaS Seed] Re-building database to support ${numRooms} dynamic rooms...`);
+            
+            // For a clean slate on demo seed:
+            await Room.destroy({ where: {} });
+            
             const roomsToCreate = [];
 
-            // Floors 1-9: 10 rooms each (101-110, 201-210, ..., 901-910)
-            for (let floor = 1; floor <= 9; floor++) {
-                for (let position = 1; position <= 10; position++) {
-                    const isAc = position % 2 === 0;
-                    roomsToCreate.push({
-                        roomNumber: floor * 100 + position,
-                        floor: floor,
-                        position: position,
-                        roomType: isAc ? 'AC' : 'Non-AC',
-                        status: 'not-booked',
-                        basePrice: isAc ? 1500.00 : 1000.00
-                    });
-                }
-            }
+            // Distribution logic (SaaS independent)
+            // 60/150 = 40%, 40/150 = 26.6%, 30/150 = 20%, 20/150 = 13.4%
+            const c_standard = Math.round(numRooms * 0.40);
+            const c_deluxe = Math.round(numRooms * 0.266);
+            const c_suite = Math.round(numRooms * 0.20);
+            const c_premium = numRooms - (c_standard + c_deluxe + c_suite); // remainders
 
-            // Floor 10: 7 rooms only (1001-1007)
-            for (let position = 1; position <= 7; position++) {
-                const isAc = position % 2 === 0;
-                roomsToCreate.push({
-                    roomNumber: 1000 + position,
-                    floor: 10,
-                    position: position,
-                    roomType: isAc ? 'AC' : 'Non-AC',
-                    status: 'not-booked',
-                    basePrice: isAc ? 1500.00 : 1000.00
-                });
+            // Configuration
+            const types = [
+                { count: c_standard, type: 'Standard', price: 1000 },
+                { count: c_deluxe,   type: 'Deluxe (AC)', price: 2000 },
+                { count: c_suite,    type: 'Suite', price: 4000 },
+                { count: c_premium,  type: 'Premium', price: 7000 }
+            ];
+
+            let globalCounter = 0;
+            let currentFloor = 1;
+            let currentPosition = 1;
+
+            for (const t of types) {
+                for(let i = 0; i < t.count; i++) {
+                    roomsToCreate.push({
+                        roomNumber: (currentFloor * 100) + currentPosition,
+                        floor: currentFloor,
+                        position: currentPosition,
+                        roomType: t.type,
+                        status: 'not-booked',
+                        basePrice: t.price
+                    });
+                    
+                    currentPosition++;
+                    globalCounter++;
+
+                    // 10 rooms per floor max for UI consistency
+                    if (currentPosition > 10) {
+                        currentFloor++;
+                        currentPosition = 1;
+                    }
+                }
             }
 
             await Room.bulkCreate(roomsToCreate);
-            console.log(`✅ Automatically seeded ${roomsToCreate.length} rooms`);
+            console.log(`✅ [SaaS Seed] Automatically seeded ${roomsToCreate.length} rooms.`);
+            console.log(`Distribution: ${c_standard} Standard, ${c_deluxe} Deluxe, ${c_suite} Suite, ${c_premium} Premium.`);
             return roomsToCreate.length;
-        } else {
-            // Migration for existing data if any standard rooms are found
-            const standardCount = await Room.count({ where: { roomType: 'standard' } });
-            if (standardCount > 0) {
-                console.log('🔄 Migrating existing rooms to AC/Non-AC...');
-                const rooms = await Room.findAll();
-                for (let room of rooms) {
-                    const isAc = room.position % 2 === 0;
-                    room.roomType = isAc ? 'AC' : 'Non-AC';
-                    room.basePrice = isAc ? 1500.00 : 1000.00;
-                    await room.save();
-                }
-                console.log('✅ Room migration successful!');
-            }
         }
-        return 0; // No rooms seeded
+        return roomCount; 
     } catch (error) {
         console.error('❌ Room seeding error:', error);
         throw error;
