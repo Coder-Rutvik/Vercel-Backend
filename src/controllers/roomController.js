@@ -23,7 +23,8 @@ const getAllRooms = async (req, res) => {
     console.error('Get all rooms error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: error.message,
+      stack: error.stack
     });
   }
 };
