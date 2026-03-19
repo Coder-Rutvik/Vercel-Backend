@@ -7,8 +7,9 @@ const seedRooms = async (numRooms = 150) => {
         if (roomCount < numRooms) {
             console.log(`🌱 [SaaS Seed] Re-building database to support ${numRooms} dynamic rooms...`);
             
-            // For a clean slate on demo seed:
-            await Room.destroy({ where: {} });
+            // For a clean slate on demo seed without hitting Neon's auto-increment schema crash:
+            await Room.drop();
+            await Room.sync({ force: true });
             
             const roomsToCreate = [];
 
