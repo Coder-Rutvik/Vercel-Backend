@@ -56,7 +56,7 @@ const connect = async () => {
     // Sync all models (creates tables if they don't exist)
     // alter: false means it won't modify existing tables
     // Sync all models (creates tables if they don't exist, altars if they do)
-    await sequelize.sync({ alter: true });
+    await sequelize.sync({ alter: false });
     console.log('✅ All models synced');
 
     // Seed rooms if table is empty
