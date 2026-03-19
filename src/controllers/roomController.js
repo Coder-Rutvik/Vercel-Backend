@@ -227,6 +227,7 @@ const generateRandomOccupancy = async (req, res) => {
         userId: user.userId,
         rooms: [room.roomNumber],
         totalRooms: 1,
+        travelTime: 0,
         totalPrice: room.basePrice * 2,
         checkInDate: new Date(),
         checkOutDate: new Date(Date.now() + 86400000 * 2),
@@ -241,7 +242,7 @@ const generateRandomOccupancy = async (req, res) => {
         items: [{ ...itemRandom, quantity: 2 }],
         totalPrice: itemRandom.price * 2,
         status: 'delivered', // Mock old orders
-        paymentStatus: 'pending'
+        paymentStatus: 'unpaid'
       });
       totalOrdersCreated++;
 
@@ -255,8 +256,8 @@ const generateRandomOccupancy = async (req, res) => {
 
         await Bill.create({
           bookingId: b.bookingId,
-          roomTotal, foodTotal, subtotal, taxAmount: tax, grandTotal,
-          isPaid: true, paymentMode: 'UPI'
+          roomTotal, foodTotal, subtotal: 0, taxAmount: tax, grandTotal,
+          isPaid: true, paymentMode: 'upi'
         });
         
         b.status = 'completed';
