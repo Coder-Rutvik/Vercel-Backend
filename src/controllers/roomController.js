@@ -295,27 +295,27 @@ const generateRandomOccupancy = async (req, res) => {
   }
 };
 
-// @desc    Reset all bookings and make all rooms available
+// @desc    Reset all bookings and make all rooms available (GLOBAL HARD RESET)
 // @route   POST /api/rooms/reset-all
 // @access  Private
 const resetAllBookings = async (req, res) => {
   try {
-    // 1. Clear all bookings
-    await Booking.destroy({ where: {} });
-    console.log('✅ All bookings cleared');
+    const { sequelize } = require('../config/database');
+    console.log('🔄 [GLOBAL RESET] Wiping and recreating all Database schemas...');
+    
+    // Drop all tables and strictly recreate them with perfect Sequences and Foreign Keys
+    await sequelize.sync({ force: true });
+    console.log('✅ [GLOBAL RESET] All tables successfully forcefully recreated!');
 
-    // 2. Reset all rooms to 'not-booked'
-    await Room.update(
-      { status: 'not-booked' },
-      { where: {} }
-    );
-    console.log('✅ All rooms reset to available');
+    // Reseed the rooms cleanly
+    const seedRooms = require('../utils/roomSeeder');
+    await seedRooms();
 
     const totalRooms = await Room.count();
 
     res.json({
       success: true,
-      message: 'Reset complete! Bookings cleared and rooms are now available.',
+      message: 'Global Reset complete! Database Schema rebuilt entirely and rooms seeded.',
       data: {
         totalRooms,
         availableRooms: totalRooms
@@ -325,7 +325,8 @@ const resetAllBookings = async (req, res) => {
     console.error('Reset all bookings error:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: error.message,
+      stack: error.stack
     });
   }
 };

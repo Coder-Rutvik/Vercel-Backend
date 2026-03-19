@@ -8,8 +8,8 @@ const seedRooms = async (numRooms = 150) => {
             console.log(`🌱 [SaaS Seed] Re-building database to support ${numRooms} dynamic rooms...`);
             
             // For a clean slate on demo seed without hitting Neon's auto-increment schema crash:
-            await Room.drop();
-            await Room.sync({ force: true });
+            console.log('🔄 Recreating entire schema globally to fix broken sequences...');
+            await require('../config/database').sequelize.sync({ force: true });
             
             const roomsToCreate = [];
 
