@@ -167,9 +167,13 @@ const getDashboardStats = async (req, res) => {
     const totalUsers = await User.count();
     const adminUsers = await User.count({ where: { role: 'admin' } });
 
-    // Get revenue stats
-    const revenueResult = await Booking.sum('totalPrice', {
-      where: { status: 'confirmed', paymentStatus: 'paid' }
+    // Get revenue stats (CRITICAL FIX: Fetch from 'Bill' table, not 'Booking')
+    // Old code ignored Restaurant KOT Earnings entirely and used a 'paymentStatus' flag that didn't sync properly!
+    const { Bill } = require('../models');
+    
+    // 'grandTotal' includes Room, Food, and Taxes. This represents True Gross Collections.
+    const revenueResult = await Bill.sum('grandTotal', {
+      where: { isPaid: true }
     });
     const totalRevenue = revenueResult || 0;
 

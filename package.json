@@ -5,7 +5,11 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "backup": "node scripts/backup-database.js",
+    "restore": "node scripts/restore-database.js",
+    "monitor:run": "node scripts/run-system-monitors.js",
+    "e2e:full": "powershell -ExecutionPolicy Bypass -File scripts/full-e2e.ps1"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

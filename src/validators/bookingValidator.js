@@ -33,6 +33,23 @@ const createBookingSchema = Joi.object({
       'date.greater': 'Check-out date must be after check-in date',
       'any.required': 'Check-out date is required'
     }),
+
+  roomType: Joi.alternatives()
+    .try(
+      Joi.valid('Any', 'Standard', 'Deluxe (AC)', 'Suite', 'Premium')
+    )
+    .optional(),
+
+  floorPreference: Joi.alternatives()
+    .try(
+      Joi.valid('Any'),
+      Joi.number().integer().min(1)
+    )
+    .optional(),
+
+  selectedRoomNumbers: Joi.array()
+    .items(Joi.number().integer().min(1))
+    .optional(),
   
   specialRequests: Joi.string()
     .max(500)

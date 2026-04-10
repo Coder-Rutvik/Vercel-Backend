@@ -10,8 +10,14 @@ const authRoutes = require('./routes/authRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
 const roomRoutes = require('./routes/roomRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const restaurantRoutes = require('./routes/restaurantRoutes');
+const billingRoutes = require('./routes/billingRoutes');
+const accountingRoutes = require('./routes/accountingRoutes');
+const inventoryRoutes = require('./routes/inventoryRoutes');
+const proRoutes = require('./routes/proRoutes');
 
 // Import middleware
+const requestLogger = require('./middleware/logger');
 const errorHandler = require('./middleware/errorHandler');
 
 // DB connections (Postgres-only)
@@ -25,7 +31,7 @@ app.use(helmet());
 // SECURITY 2: Rate Limiting against Bruteforce / DDoS
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // Limit each IP to 1000 requests per `window` for demo scale
+  max: parseInt(process.env.RATE_LIMIT_MAX || '1000', 10), // tunable for production
   message: { success: false, message: 'Too many requests from this IP, please try again after 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -37,16 +43,41 @@ app.use('/api/', limiter);
 app.set('trust proxy', 1);
 
 // 2. CORS - MUST BE FIRST
+const allowedOrigins = (process.env.FRONTEND_URL || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 const corsOptions = {
-  origin: '*',
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true); // server-to-server / curl
+    if (allowedOrigins.length === 0) return callback(null, true); // fallback for local setup
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('CORS not allowed for this origin.'));
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept', 'X-Requested-With'],
-  credentials: true,
+  credentials: allowedOrigins.length > 0,
   optionsSuccessStatus: 200
 };
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
+
+// SECURITY 3: Enforce HTTPS in production behind trusted proxy
+app.use((req, res, next) => {
+  const requireHttps = String(process.env.REQUIRE_HTTPS || 'true') === 'true';
+  if (process.env.NODE_ENV !== 'production' || !requireHttps) return next();
+
+  const forwardedProto = req.headers['x-forwarded-proto'];
+  if (forwardedProto && forwardedProto !== 'https') {
+    return res.status(403).json({
+      success: false,
+      message: 'HTTPS is required for this API in production.'
+    });
+  }
+  return next();
+});
 
 // 3. Root Route (For quick health check)
 app.get('/', (req, res) => {
@@ -90,13 +121,11 @@ app.use(async (req, res, next) => {
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(requestLogger);
 
 // Logging
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
-} else {
-  // Use combined format for Vercel console logs (no explicit file stream)
-  app.use(morgan('combined'));
 }
 
 // ✅ ROOT ENDPOINT
@@ -137,48 +166,17 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// ONE-TIME FORCE SYNC ENDPOINT TO FIX CORRUPTED NEON SCHEMA
-app.get('/api/health/force-reset-corrupted-schema', async (req, res) => {
-  try {
-    const { sequelize } = require('./config/database');
-    await sequelize.sync({ force: true });
-    
-    const seedRooms = require('./utils/roomSeeder');
-    await seedRooms();
-
-    res.json({
-      success: true,
-      message: '✅ ENTIRE NEON DB SCHEMA DROPPED AND PERFECTLY RECREATED WITH SEQUENCES!'
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+// (Removed dangerous force-reset-corrupted-schema endpoint to prevent catastrophic data loss)
 
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/admin', adminRoutes);
-
-// NEW RESTAURANT ROUTE
-const restaurantRoutes = require('./routes/restaurantRoutes');
 app.use('/api/restaurant', restaurantRoutes);
-
-// NEW BILLING ROUTE (ROOM + FOOD CHECKOUT)
-const billingRoutes = require('./routes/billingRoutes');
 app.use('/api/billing', billingRoutes);
-
-// NEW ACCOUNTING/PNL ROUTE
-const accountingRoutes = require('./routes/accountingRoutes');
 app.use('/api/accounting', accountingRoutes);
-
-// NEW INVENTORY & AUDIT LOG ROUTE
-const inventoryRoutes = require('./routes/inventoryRoutes');
 app.use('/api/inventory', inventoryRoutes);
-
-// PHASE 3 PRO FEATURES
-const proRoutes = require('./routes/proRoutes');
 app.use('/api/pro', proRoutes);
 
 // 404 handler

@@ -1,4 +1,5 @@
-const { Bill, Expense } = require('../models');
+const { sequelize } = require('../config/database');
+const { Bill, Expense, Booking } = require('../models');
 const { Op } = require('sequelize');
 
 // @desc Add a new Expense (Salary, Food Cost, Maintenance)
@@ -7,6 +8,12 @@ const { Op } = require('sequelize');
 exports.addExpense = async (req, res) => {
   try {
     const { category, amount, description, date } = req.body;
+    
+    // SECURITY FIX: Prevent "Negative Expense" Exploit (which would illegally increase Profit)
+    if (amount === undefined || amount < 0) {
+      return res.status(400).json({ success: false, message: 'Expense amount cannot be negative or missing' });
+    }
+
     const expense = await Expense.create({
       category,
       amount,
@@ -25,44 +32,30 @@ exports.addExpense = async (req, res) => {
 // @access Private (Admin/Manager)
 exports.getDashboardMetrics = async (req, res) => {
   try {
-    // We can filter by date range, but for MVP we get all or grouped by month/today
-    // Let's get "All Time" and "Today"
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    // Revenue comes from Bills that are paid
-    const paidBills = await Bill.findAll({ where: { isPaid: true } });
+    // MEMORY CRASH FIX (OOM): Replaced findAll() with SQL Aggregations (SUM)
+    // Loading 1,000,000 bills into Node RAM would crash the server. This does it at DB level!
     
-    let totalRoomRevenue = 0;
-    let totalFoodRevenue = 0;
-    let totalTaxCollected = 0;
-    let totalRevenue = 0; // grandTotals
+    const [totalRoomRevenue, totalFoodRevenue, totalTaxCollected] = await Promise.all([
+      Bill.sum('roomTotal', { where: { isPaid: true } }).then(val => val || 0),
+      Bill.sum('foodTotal', { where: { isPaid: true } }).then(val => val || 0),
+      Bill.sum('taxAmount', { where: { isPaid: true } }).then(val => val || 0)
+    ]);
 
-    paidBills.forEach(bill => {
-      totalRoomRevenue += parseFloat(bill.roomTotal);
-      totalFoodRevenue += parseFloat(bill.foodTotal);
-      totalTaxCollected += parseFloat(bill.taxAmount);
-      totalRevenue += parseFloat(bill.grandTotal);
-    });
-
-    // Expenses
-    const allExpenses = await Expense.findAll();
-    let totalExpenses = 0;
-    const expensesByCategory = {};
-
-    allExpenses.forEach(exp => {
-      totalExpenses += parseFloat(exp.amount);
-      if(!expensesByCategory[exp.category]) {
-        expensesByCategory[exp.category] = 0;
-      }
-      expensesByCategory[exp.category] += parseFloat(exp.amount);
-    });
-
-    // Profit
-    const netProfit = totalRevenue - totalExpenses - totalTaxCollected; // assuming tax goes to govt
-    // Wait, grandTotal includes tax. If business pays tax to govt, real revenue is (grandTotal - taxAmount).
-    // So real income is (totalRoomRevenue + totalFoodRevenue)
     const grossIncome = totalRoomRevenue + totalFoodRevenue;
+
+    // Aggregate Expenses directly using SQL
+    const totalExpenses = await Expense.sum('amount').then(val => val || 0);
+
+    const expensesGrouped = await Expense.findAll({
+      attributes: ['category', [sequelize.fn('SUM', sequelize.col('amount')), 'totalAmount']],
+      group: ['category']
+    });
+
+    const expensesByCategory = {};
+    expensesGrouped.forEach(exp => {
+      expensesByCategory[exp.category] = parseFloat(exp.get('totalAmount'));
+    });
+
     const finalProfit = grossIncome - totalExpenses;
 
     res.status(200).json({
@@ -127,5 +120,77 @@ exports.getAdvancedReports = async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// @desc Get revenue + booking trend data for charts
+// @route GET /api/accounting/trends
+// @access Private (Admin/Manager)
+exports.getTrendAnalytics = async (req, res) => {
+  try {
+    const requestedDays = parseInt(req.query.days || '14', 10);
+    const days = Number.isFinite(requestedDays)
+      ? Math.min(Math.max(requestedDays, 7), 60)
+      : 14;
+
+    const startDate = new Date();
+    startDate.setHours(0, 0, 0, 0);
+    startDate.setDate(startDate.getDate() - (days - 1));
+
+    const [paidBills, bookings] = await Promise.all([
+      Bill.findAll({
+        where: {
+          isPaid: true,
+          createdAt: { [Op.gte]: startDate }
+        },
+        attributes: ['grandTotal', 'createdAt']
+      }),
+      Booking.findAll({
+        where: {
+          createdAt: { [Op.gte]: startDate },
+          status: { [Op.in]: ['confirmed', 'completed'] }
+        },
+        attributes: ['createdAt']
+      })
+    ]);
+
+    const labels = [];
+    const revenueMap = new Map();
+    const bookingMap = new Map();
+
+    for (let i = 0; i < days; i += 1) {
+      const d = new Date(startDate);
+      d.setDate(startDate.getDate() + i);
+      const key = d.toISOString().slice(0, 10);
+      labels.push(key);
+      revenueMap.set(key, 0);
+      bookingMap.set(key, 0);
+    }
+
+    paidBills.forEach((bill) => {
+      const key = new Date(bill.createdAt).toISOString().slice(0, 10);
+      if (!revenueMap.has(key)) return;
+      const prev = revenueMap.get(key) || 0;
+      revenueMap.set(key, prev + (parseFloat(bill.grandTotal) || 0));
+    });
+
+    bookings.forEach((booking) => {
+      const key = new Date(booking.createdAt).toISOString().slice(0, 10);
+      if (!bookingMap.has(key)) return;
+      const prev = bookingMap.get(key) || 0;
+      bookingMap.set(key, prev + 1);
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        days,
+        labels,
+        revenueSeries: labels.map((k) => parseFloat((revenueMap.get(k) || 0).toFixed(2))),
+        bookingSeries: labels.map((k) => bookingMap.get(k) || 0)
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };

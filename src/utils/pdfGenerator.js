@@ -3,6 +3,94 @@ const fs = require('fs');
 const path = require('path');
 
 class PDFGenerator {
+  // Generate combined checkout invoice PDF (room + food + GST)
+  static async generateCombinedBillInvoice({ booking, bill, user, rooms = [], orders = [] }) {
+    return new Promise((resolve, reject) => {
+      try {
+        const doc = new PDFDocument({ margin: 42, size: 'A4' });
+        const chunks = [];
+        doc.on('data', (chunk) => chunks.push(chunk));
+        doc.on('end', () => resolve(Buffer.concat(chunks)));
+
+        const bookingIdShort = String(booking.bookingId || '').slice(0, 8).toUpperCase();
+        doc.fontSize(20).fillColor('#0f172a').text('HOTEL INVOICE', { align: 'left' });
+        doc.moveDown(0.3);
+        doc.fontSize(10).fillColor('#475569');
+        doc.text(`Invoice: ${bookingIdShort}`);
+        doc.text(`Generated: ${new Date().toLocaleString()}`);
+        doc.moveDown(0.8);
+
+        doc.fontSize(12).fillColor('#111827').text('Guest');
+        doc.fontSize(10).fillColor('#374151');
+        doc.text(user?.name || 'Guest');
+        if (user?.email) doc.text(user.email);
+        if (user?.phone) doc.text(user.phone);
+        doc.moveDown(0.8);
+
+        doc.fontSize(12).fillColor('#111827').text('Stay');
+        doc.fontSize(10).fillColor('#374151');
+        doc.text(`Check-in: ${booking.checkInDate}`);
+        doc.text(`Check-out: ${booking.checkOutDate}`);
+        doc.text(`Rooms: ${Array.isArray(booking.rooms) ? booking.rooms.join(', ') : 'N/A'}`);
+        doc.moveDown(0.8);
+
+        doc.fontSize(12).fillColor('#111827').text('Room charges');
+        doc.moveDown(0.3);
+        if (rooms.length === 0) {
+          doc.fontSize(10).fillColor('#6b7280').text('No room rows available');
+        } else {
+          rooms.forEach((room) => {
+            doc
+              .fontSize(10)
+              .fillColor('#374151')
+              .text(`Room ${room.roomNumber} - ${room.roomType} - Rs. ${parseFloat(room.basePrice || 0).toFixed(2)}/night`);
+          });
+        }
+        doc.moveDown(0.8);
+
+        doc.fontSize(12).fillColor('#111827').text('Food orders');
+        doc.moveDown(0.3);
+        if (!orders || orders.length === 0) {
+          doc.fontSize(10).fillColor('#6b7280').text('No food charges');
+        } else {
+          orders.forEach((order) => {
+            const idShort = String(order.orderId || '').slice(0, 6).toUpperCase();
+            doc.fontSize(10).fillColor('#111827').text(`Order #${idShort}`);
+            (order.items || []).forEach((item) => {
+              const qty = parseInt(item.quantity || 1, 10);
+              const price = parseFloat(item.price || 0);
+              const rowTotal = qty * price;
+              doc
+                .fontSize(9)
+                .fillColor('#374151')
+                .text(`  - ${item.name} x${qty}  Rs. ${rowTotal.toFixed(2)}`);
+            });
+          });
+        }
+        doc.moveDown(0.8);
+
+        const roomTotal = parseFloat(bill.roomTotal || 0);
+        const foodTotal = parseFloat(bill.foodTotal || 0);
+        const taxAmount = parseFloat(bill.taxAmount || 0);
+        const grandTotal = parseFloat(bill.grandTotal || 0);
+        const gstPercentage = parseFloat(bill.gstPercentage || 18);
+
+        doc.moveTo(42, doc.y).lineTo(553, doc.y).stroke('#cbd5e1');
+        doc.moveDown(0.5);
+        doc.fontSize(11).fillColor('#111827').text(`Room total: Rs. ${roomTotal.toFixed(2)}`);
+        doc.text(`Food total: Rs. ${foodTotal.toFixed(2)}`);
+        doc.text(`GST (${gstPercentage}%): Rs. ${taxAmount.toFixed(2)}`);
+        doc.fontSize(13).fillColor('#0f172a').text(`Grand total: Rs. ${grandTotal.toFixed(2)}`);
+        doc.moveDown(1.2);
+
+        doc.fontSize(9).fillColor('#64748b').text('Thank you for staying with us.', { align: 'center' });
+        doc.end();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
   // Generate booking invoice PDF
   static async generateBookingInvoice(booking, user, rooms) {
     return new Promise((resolve, reject) => {

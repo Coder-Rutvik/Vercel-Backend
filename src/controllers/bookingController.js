@@ -1,260 +1,459 @@
-const { Booking, User, Room } = require('../models');
-const { Op } = require('sequelize');
+const { Booking, User, Room, Order, Bill } = require('../models');
+const { Op, Sequelize } = require('sequelize');
 const { sequelize } = require('../config/database');
 
-// @desc    Book rooms
-// @route   POST /api/bookings
-// @access  Private
-// Helper to calculate travel time between two rooms
-const getTravelTime = (r1, r2) => {
-  if (r1.floor === r2.floor) {
-    return Math.abs(r1.position - r2.position);
+const parseDateOnly = (value) => {
+  if (value == null) return null;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
   }
-  // Vertical travel: walk to lift (pos-1) + lift time (floor diff * 2) + walk from lift (pos-1)
-  // Assuming position 1 is closest to lift
-  return (r1.position - 1) + (r2.position - 1) + (Math.abs(r1.floor - r2.floor) * 2);
+
+  const str = String(value);
+  const m = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) {
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    return new Date(Date.UTC(y, mo - 1, d));
+  }
+
+  const dt = new Date(str);
+  if (Number.isNaN(dt.getTime())) return null;
+  return new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate()));
 };
 
-// Helper to calculate total path cost for a set of rooms
-const calculateTotalPathCost = (rooms) => {
-  if (rooms.length <= 1) return 0;
-  // Sort by floor then position to simulate a logical traversal
-  const sorted = [...rooms].sort((a, b) => {
-    if (a.floor !== b.floor) return a.floor - b.floor;
-    return a.position - b.position;
-  });
-
-  let totalCost = 0;
-  for (let i = 0; i < sorted.length - 1; i++) {
-    totalCost += getTravelTime(sorted[i], sorted[i + 1]);
-  }
-  return totalCost;
-};
-
-// @desc    Book rooms with optimal placement
+// @desc    Book rooms (Entrepreneurial Logic - Smart Fallback Select)
 // @route   POST /api/bookings
-// @access  Private
 const bookRooms = async (req, res) => {
   try {
-    const { numRooms, checkInDate, checkOutDate, roomType } = req.body;
+    const { numRooms, checkInDate, checkOutDate, roomType, floorPreference, selectedRoomNumbers } = req.body;
     const userId = req.user.userId;
 
+    // 1. Validation
     if (!numRooms || numRooms < 1 || numRooms > 5) {
-      return res.status(400).json({ success: false, message: 'Number of rooms must be between 1 and 5' });
+      return res.status(400).json({ success: false, message: 'Select 1 to 5 rooms' });
     }
 
-    const checkIn = new Date(checkInDate);
-    const checkOut = new Date(checkOutDate);
-    const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24)) || 1;
+    const checkInParsed = parseDateOnly(checkInDate);
+    const checkOutParsed = parseDateOnly(checkOutDate);
 
-    // 1. Get all available rooms
-    const whereClause = { status: 'not-booked' };
-    if (roomType && roomType !== 'Any') {
-      whereClause.roomType = roomType;
+    if (!checkInParsed || !checkOutParsed) {
+      return res.status(400).json({ success: false, message: 'Invalid check-in/check-out date.' });
     }
 
-    const availableRooms = await Room.findAll({
-      where: whereClause,
-      order: [['floor', 'ASC'], ['position', 'ASC']]
+    const dayMs = 1000 * 60 * 60 * 24;
+    const nightsRaw = (checkOutParsed.getTime() - checkInParsed.getTime()) / dayMs;
+    const nights = Math.trunc(nightsRaw);
+
+    if (!Number.isFinite(nights) || nights <= 0) {
+      return res.status(400).json({ success: false, message: 'Check-out date must be after check-in date.' });
+    }
+
+    let finalRoomNumbers = [];
+
+    // Build per-date booked-room set (only confirmed bookings, overlapping date-range)
+    const conflictingBookings = await Booking.findAll({
+      where: {
+        status: 'confirmed',
+        // Exclusive overlap check for DATEONLY ranges:
+        // newStart < existingEnd AND newEnd > existingStart
+        checkInDate: { [Op.lt]: checkOutParsed },
+        checkOutDate: { [Op.gt]: checkInParsed },
+      },
+      attributes: ['rooms']
     });
 
-    if (availableRooms.length < numRooms) {
-      return res.status(400).json({ success: false, message: 'Not enough rooms available' });
-    }
-
-    let selectedRooms = [];
-    let bestScore = Infinity;
-
-    // Priority 1: Check Same Floor Availability
-    const roomsByFloor = {};
-    availableRooms.forEach(r => {
-      if (!roomsByFloor[r.floor]) roomsByFloor[r.floor] = [];
-      roomsByFloor[r.floor].push(r);
+    const bookedRoomNumbers = new Set();
+    conflictingBookings.forEach(b => {
+      if (Array.isArray(b.rooms)) {
+        b.rooms.forEach(n => bookedRoomNumbers.add(Number(n)));
+      }
     });
 
-    for (const floor in roomsByFloor) {
-      const floorRooms = roomsByFloor[floor]; // already sorted by pos
-      if (floorRooms.length >= numRooms) {
-        // Find best contiguous/close segment on this floor
-        // Since they are sorted by position, a sliding window of size N minimizes the spread
-        for (let i = 0; i <= floorRooms.length - numRooms; i++) {
-          const subset = floorRooms.slice(i, i + numRooms);
-          // For same floor, cost matches spread: MaxPos - MinPos
-          const score = subset[subset.length - 1].position - subset[0].position;
+    const targetFloor = floorPreference && floorPreference !== 'Any' ? parseInt(floorPreference) : null;
+    const isTypeAny = !roomType || roomType === 'Any';
 
-          if (score < bestScore) {
-            bestScore = score;
-            selectedRooms = subset;
-          }
+    // --- LOGIC A: Manual Map Selection (User clicked rooms) ---
+    if (selectedRoomNumbers && selectedRoomNumbers.length > 0) {
+      if (selectedRoomNumbers.length !== numRooms) {
+        return res.status(400).json({ success: false, message: `Please select exactly ${numRooms} rooms on the floor map.` });
+      }
+
+      // Validate selected rooms belong to preferred floor + roomType (if provided)
+      const roomsSelected = await Room.findAll({
+        where: { roomNumber: { [Op.in]: selectedRoomNumbers } }
+      });
+
+      if (roomsSelected.length !== numRooms) {
+        return res.status(400).json({ success: false, message: 'One or more selected rooms are invalid.' });
+      }
+
+      if (targetFloor) {
+        const anyMismatchFloor = roomsSelected.some(r => Number(r.floor) !== targetFloor);
+        if (anyMismatchFloor) {
+          return res.status(400).json({ success: false, message: `Selected rooms must be on Floor ${targetFloor}.` });
         }
+      }
+
+      if (!isTypeAny) {
+        const anyMismatchType = roomsSelected.some(r => r.roomType !== roomType);
+        if (anyMismatchType) {
+          return res.status(400).json({ success: false, message: `Selected rooms must match room type "${roomType}".` });
+        }
+      }
+
+      const unavailable = selectedRoomNumbers.filter(n => bookedRoomNumbers.has(Number(n)));
+      if (unavailable.length > 0) {
+        return res.status(400).json({ success: false, message: `Room ${unavailable[0]} unavailable!` });
+      }
+
+      finalRoomNumbers = selectedRoomNumbers;
+    } 
+    // --- LOGIC B: Smart Floor Preference WITH Fallback ---
+    else {
+      const whereClause = {};
+      if (!isTypeAny) whereClause.roomType = roomType;
+
+      // 1st Priority: Try finding all required rooms on the EXACT preferred floor
+      if (targetFloor) {
+        const floorCandidates = await Room.findAll({
+          where: { ...whereClause, floor: targetFloor },
+          order: [['position', 'ASC']]
+        });
+
+        const availableFloorCandidates = floorCandidates.filter(r => !bookedRoomNumbers.has(Number(r.roomNumber)));
+
+        if (availableFloorCandidates.length >= numRooms) {
+          finalRoomNumbers = availableFloorCandidates.slice(0, numRooms).map(r => r.roomNumber);
+        } else {
+          // 2nd Priority: Floor is FULL or partially empty -> Show Warning/Alert in Response
+          // The USER wants an "Alert" telling them the floor is full!
+          return res.status(400).json({ 
+            success: false, 
+            message: `⚠️ Floor ${targetFloor} is FULL! Please choose another floor or use manual selection.`,
+            errorType: 'FLOOR_FULL' 
+          });
+        }
+      } 
+      // No floor preference: Just take the first available rooms
+      else {
+        const anyCandidates = await Room.findAll({
+          where: whereClause,
+          order: [['floor', 'ASC'], ['position', 'ASC']]
+        });
+
+        const availableAnyCandidates = anyCandidates.filter(r => !bookedRoomNumbers.has(Number(r.roomNumber)));
+
+        if (availableAnyCandidates.length < numRooms) {
+          return res.status(400).json({ success: false, message: 'No rooms available!' });
+        }
+
+        finalRoomNumbers = availableAnyCandidates.slice(0, numRooms).map(r => r.roomNumber);
       }
     }
 
-    // Priority 2: If no same-floor solution found
-    if (selectedRooms.length === 0) {
-      // Multi-floor optimization: Minimize total travel time (Horizontal + Vertical)
+    // 2. Pricing & Transaction
+    const roomsToBook = await Room.findAll({ where: { roomNumber: { [Op.in]: finalRoomNumbers } } });
 
-      let bestClusterScore = Infinity;
-
-      for (let i = 0; i < availableRooms.length; i++) {
-        const seed = availableRooms[i];
-
-        // Calculate distance from seed to all others
-        const neighbors = availableRooms.map(r => ({
-          room: r,
-          dist: getTravelTime(seed, r)
-        }));
-
-        // Sort by distance from seed
-        neighbors.sort((a, b) => a.dist - b.dist);
-
-        // Take top N candidates
-        const candidates = neighbors.slice(0, numRooms).map(n => n.room);
-
-        if (candidates.length === numRooms) {
-          // Calculate the specific traversal cost for this cluster
-          const clusterScore = calculateTotalPathCost(candidates);
-
-          if (clusterScore < bestClusterScore) {
-            bestClusterScore = clusterScore;
-            selectedRooms = candidates;
-          }
+    if (!roomsToBook || roomsToBook.length !== numRooms) {
+      return res.status(400).json({
+        success: false,
+        message: 'Could not validate room selection. Please try again with valid rooms.',
+        details: {
+          expected: numRooms,
+          found: roomsToBook ? roomsToBook.length : 0
         }
-      }
-      bestScore = bestClusterScore;
+      });
     }
 
-    if (selectedRooms.length === 0) {
-      return res.status(400).json({ success: false, message: 'Could not find a suitable set of rooms' });
-    }
-
-    const roomNumbers = selectedRooms.map(room => room.roomNumber);
-
-    // Calculate total price based on individual room prices
     let basePriceSum = 0;
-    selectedRooms.forEach(r => {
-      basePriceSum += parseFloat(r.basePrice);
-    });
+    roomsToBook.forEach(r => { basePriceSum += parseFloat(r.basePrice); });
     const totalPrice = parseFloat((basePriceSum * nights).toFixed(2));
 
-    console.log(`📡 Attempting to book rooms: ${roomNumbers.join(', ')} for user ${userId}`);
-
-    // Execute booking within a transaction to ensure atomicity
-    const result = await sequelize.transaction(async (t) => {
-      const newBooking = await Booking.create({
-        userId,
-        rooms: roomNumbers,
-        totalRooms: numRooms,
-        travelTime: bestScore,
-        totalPrice,
-        checkInDate,
-        checkOutDate,
-        status: 'confirmed'
-      }, { transaction: t });
-
-      console.log(`✅ Booking record created: ${newBooking.bookingId}`);
-
-      const [updatedCount] = await Room.update(
-        { status: 'booked' },
-        {
-          where: { 
-            roomNumber: { [Op.in]: roomNumbers },
-            status: 'not-booked' // CONCURRENCY FIX: Protect against Race Condition Double-Booking
-          },
+    const result = await sequelize.transaction(
+      {
+        // Helps prevent phantoms on concurrent overlap checks (best-effort for race-safety)
+        isolationLevel: Sequelize.Transaction.ISOLATION_LEVELS.SERIALIZABLE
+      },
+      async (t) => {
+        // Lock chosen rooms for the duration of the transaction.
+        // (Prevents two concurrent bookings from finalizing the same rooms.)
+        await Room.findAll({
+          where: { roomNumber: { [Op.in]: finalRoomNumbers } },
+          lock: t.LOCK.UPDATE,
           transaction: t
+        });
+
+        // Race-safety: re-check overlapping confirmed bookings inside transaction.
+        // Lock matching bookings rows too (best-effort).
+        const latestConflicts = await Booking.findAll({
+          where: {
+            status: 'confirmed',
+            // Exclusive overlap check for DATEONLY ranges:
+            // newStart < existingEnd AND newEnd > existingStart
+            checkInDate: { [Op.lt]: checkOutParsed },
+            checkOutDate: { [Op.gt]: checkInParsed },
+          },
+          attributes: ['rooms'],
+          lock: t.LOCK.UPDATE,
+          transaction: t
+        });
+
+        const latestBookedRoomNumbers = new Set();
+        latestConflicts.forEach(b => {
+          if (Array.isArray(b.rooms)) {
+            b.rooms.forEach(n => latestBookedRoomNumbers.add(Number(n)));
+          }
+        });
+
+        const stillUnavailable = finalRoomNumbers.filter(n => latestBookedRoomNumbers.has(Number(n)));
+        if (stillUnavailable.length > 0) {
+          const err = new Error(`Room ${stillUnavailable[0]} unavailable!`);
+          err.statusCode = 400;
+          throw err;
         }
-      );
 
-      console.log(`🛌 Updated ${updatedCount} rooms to "booked" status`);
-
-      if (updatedCount !== roomNumbers.length) {
-        throw new Error(`CONCURRENCY RACE DETECTED: Another user just booked one of these rooms. Transaction completely rolled back.`);
+        const newBooking = await Booking.create(
+          {
+            // travelTime is required in the model; set to 0 if not computed here
+            userId,
+            rooms: finalRoomNumbers,
+            totalRooms: numRooms,
+            travelTime: 0,
+            totalPrice,
+            checkInDate: checkInParsed,
+            checkOutDate: checkOutParsed,
+            status: 'confirmed'
+          },
+          { transaction: t }
+        );
+        return newBooking;
       }
+    );
 
-      return newBooking;
-    });
+    if (req.app.get('io')) {
+      req.app.get('io').emit('booking-created', {
+        bookingId: result.bookingId,
+        userId,
+        rooms: result.rooms,
+        checkInDate: result.checkInDate,
+        checkOutDate: result.checkOutDate
+      });
+    }
 
-    res.status(201).json({
-      success: true,
-      message: 'Booking successful!',
-      data: {
-        ...result.toJSON(),
-        rooms: selectedRooms
-      }
-    });
+    res.status(201).json({ success: true, message: 'Booking successful!', data: result });
 
   } catch (error) {
-    console.error('❌ [Booking Controller] bookRooms Error:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Booking failed'
-    });
+    const statusCode = error && error.statusCode ? error.statusCode : 500;
+    res.status(statusCode).json({ success: false, message: error.message });
   }
 };
 
-// @desc    Get user bookings
 const getUserBookings = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const bookings = await Booking.findAll({
-      where: { userId: userId },
-      order: [['createdAt', 'DESC']]
-    });
-    const user = await User.findByPk(userId, { attributes: ['name', 'email', 'phone'] });
+    const bookings = await Booking.findAll({ where: { userId }, order: [['createdAt', 'DESC']] });
+    res.json({ success: true, data: bookings });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed' });
+  }
+};
 
-    res.json({
-      success: true,
-      data: bookings.map(b => ({ ...b.toJSON(), user }))
+const cancelBooking = async (req, res) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+    const userId = req.user.userId;
+
+    // Validate booking exists and belongs to user
+    const booking = await Booking.findOne({ 
+      where: { bookingId: id, userId: req.user.userId },
+      include: [{
+        model: Order,
+        as: 'orders'
+      }],
+      transaction 
+    });
+    
+    if (!booking) {
+      await transaction.rollback();
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Booking not found or you do not have permission to cancel it' 
+      });
+    }
+
+    // Business rule: Cannot cancel completed bookings
+    if (booking.status === 'completed') {
+      await transaction.rollback();
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Cannot cancel a completed booking' 
+      });
+    }
+
+    // Business rule: Cannot cancel bookings that are in the past
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const checkInDate = new Date(booking.checkInDate);
+    checkInDate.setHours(0, 0, 0, 0);
+    
+    if (checkInDate < today) {
+      await transaction.rollback();
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Cannot cancel bookings for past dates' 
+      });
+    }
+
+    // Update booking status
+    booking.status = 'cancelled';
+    await booking.save({ transaction });
+
+    // Cancel any associated orders
+    if (booking.orders && booking.orders.length > 0) {
+      await Order.update(
+        { status: 'cancelled' },
+        { 
+          where: { bookingId: booking.bookingId },
+          transaction 
+        }
+      );
+    }
+
+    await transaction.commit();
+    
+    res.json({ 
+      success: true, 
+      message: 'Booking cancelled successfully. Any associated orders have also been cancelled.',
+      data: {
+        bookingId: booking.bookingId,
+        cancelledAt: new Date().toISOString()
+      }
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Failed to fetch bookings' });
+    await transaction.rollback();
+    console.error('Cancel booking error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to cancel booking: ' + error.message 
+    });
   }
 };
 
 const getBookingById = async (req, res) => {
   try {
     const { id } = req.params;
-    const booking = await Booking.findOne({ where: { bookingId: id, userId: req.user.userId } });
-    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
-    res.json({ success: true, data: booking });
+    const userId = req.user.userId;
+
+    const booking = await Booking.findOne({ 
+      where: { bookingId: id, userId: req.user.userId },
+      include: [{
+        model: Order,
+        as: 'orders'
+      }, {
+        model: Bill,
+        as: 'bill'
+      }]
+    });
+    
+    if (!booking) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Booking not found or you do not have permission to view it' 
+      });
+    }
+    
+    res.json({ 
+      success: true, 
+      data: booking,
+      message: 'Booking retrieved successfully'
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error' });
-  }
-};
-
-const cancelBooking = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const booking = await Booking.findOne({ where: { bookingId: id, userId: req.user.userId } });
-    if (!booking) return res.status(404).json({ success: false, message: 'Booking not found' });
-
-    booking.status = 'cancelled';
-    await booking.save();
-
-    await Room.update({ status: 'not-booked' }, { where: { roomNumber: booking.rooms } });
-
-    res.json({ success: true, message: 'Booking cancelled successfully' });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Cancel failed' });
+    console.error('Get booking by ID error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to retrieve booking: ' + error.message 
+    });
   }
 };
 
 const getBookingStats = async (req, res) => {
   try {
     const userId = req.user.userId;
-    const total = await Booking.count({ where: { userId } });
-    const confirmed = await Booking.count({ where: { userId, status: 'confirmed' } });
-    const cancelled = await Booking.count({ where: { userId, status: 'cancelled' } });
-    res.json({ success: true, data: { total, confirmed, cancelled } });
+    
+    // Get comprehensive booking statistics
+    const [total, confirmed, cancelled, completed, totalSpent] = await Promise.all([
+      Booking.count({ where: { userId } }),
+      Booking.count({ where: { userId, status: 'confirmed' } }),
+      Booking.count({ where: { userId, status: 'cancelled' } }),
+      Booking.count({ where: { userId, status: 'completed' } }),
+      Booking.sum('totalPrice', {
+        where: { userId, status: { [Op.in]: ['confirmed', 'completed'] } }
+      })
+    ]);
+
+    // Get upcoming bookings
+    const today = new Date();
+    const upcoming = await Booking.count({
+      where: {
+        userId,
+        status: 'confirmed',
+        checkInDate: { [Op.gte]: today }
+      }
+    });
+
+    // Get total nights booked
+    const bookings = await Booking.findAll({
+      where: { userId, status: { [Op.in]: ['confirmed', 'completed'] } },
+      attributes: ['checkInDate', 'checkOutDate']
+    });
+
+    const dateOnlyToUtcMs = (value) => {
+      if (value == null) return null;
+      if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate());
+      }
+      const str = String(value);
+      const m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (m) {
+        return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      }
+      const t = new Date(str).getTime();
+      return Number.isNaN(t) ? null : t;
+    };
+
+    let totalNights = 0;
+    bookings.forEach((booking) => {
+      const ci = dateOnlyToUtcMs(booking.checkInDate);
+      const co = dateOnlyToUtcMs(booking.checkOutDate);
+      if (ci != null && co != null && co > ci) {
+        totalNights += Math.round((co - ci) / (1000 * 60 * 60 * 24));
+      }
+    });
+
+    res.json({ 
+      success: true, 
+      data: { 
+        total,
+        confirmed,
+        cancelled,
+        completed,
+        upcoming,
+        totalSpent: totalSpent || 0,
+        totalNights,
+        averageBookingValue: total > 0 ? (totalSpent || 0) / total : 0
+      },
+      message: 'Booking statistics retrieved successfully'
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Stats failed' });
+    console.error('Get booking stats error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to retrieve booking statistics: ' + error.message 
+    });
   }
 };
 
-module.exports = {
-  bookRooms,
-  getUserBookings,
-  getBookingById,
-  cancelBooking,
-  getBookingStats
-};
+module.exports = { bookRooms, getUserBookings, getBookingById, cancelBooking, getBookingStats };

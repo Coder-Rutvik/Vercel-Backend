@@ -183,9 +183,7 @@ const updateProfile = async (req, res) => {
     if (name) user.name = name;
     if (phone) user.phone = phone;
 
-    await retryOperation(async () => {
-      await user.save();
-    });
+    await user.save();
 
     // Remove password from response
     const userResponse = user.toJSON();
@@ -239,9 +237,7 @@ const changePassword = async (req, res) => {
     }
 
     user.password = newPassword;
-    await retryOperation(async () => {
-      await user.save();
-    });
+    await user.save();
 
     res.json({
       success: true,

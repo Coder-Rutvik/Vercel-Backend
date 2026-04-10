@@ -1,16 +1,24 @@
 const winston = require('winston');
 
+const isProd = process.env.NODE_ENV === 'production';
+
 const logger = winston.createLogger({
-  level: 'info',
+  level: process.env.LOG_LEVEL || (isProd ? 'info' : 'debug'),
   format: winston.format.combine(
-    winston.format.timestamp(),
-    winston.format.json()
+    winston.format.timestamp()
   ),
   defaultMeta: { service: 'hotel-reservation-service' },
   transports: [
-    // Vercel Serverless handles stdout directly in its logs dashboard
     new winston.transports.Console({
-      format: winston.format.simple(),
+      format: isProd
+        ? winston.format.json()
+        : winston.format.combine(
+            winston.format.colorize(),
+            winston.format.printf(({ level, message, timestamp, ...meta }) => {
+              const metaString = Object.keys(meta).length > 0 ? ` ${JSON.stringify(meta)}` : '';
+              return `${timestamp} [${level}] ${message}${metaString}`;
+            })
+          ),
     })
   ],
 });

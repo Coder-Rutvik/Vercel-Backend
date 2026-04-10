@@ -1,10 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const accountingController = require('../controllers/accountingController');
-const { protect } = require('../middleware/auth'); // In future, add restrictTo('admin', 'manager')
+const { protect, authorize } = require('../middleware/auth');
 
-router.post('/expense', protect, accountingController.addExpense); // Added restrict back optionally
-router.get('/dashboard', protect, accountingController.getDashboardMetrics);
-router.get('/reports', protect, accountingController.getAdvancedReports);
+router.post('/expense', protect, authorize('admin', 'manager'), accountingController.addExpense);
+router.get('/dashboard', protect, authorize('admin', 'manager'), accountingController.getDashboardMetrics);
+router.get('/reports', protect, authorize('admin', 'manager'), accountingController.getAdvancedReports);
+router.get('/trends', protect, authorize('admin', 'manager'), accountingController.getTrendAnalytics);
 
 module.exports = router;
